@@ -1,4 +1,4 @@
-"""run / cmd 编排:冷启动 -> 传输(插件) -> 执行(插件) -> 断言 -> 收尾;
+"""run 编排:冷启动 -> 传输(插件) -> 执行(插件) -> 断言 -> 收尾;
 repeat > 1 时循环多轮(每轮冷启动)并汇总 PASS/FAIL"""
 import os
 import re
@@ -8,21 +8,6 @@ from . import power
 from .config import BASE_DIR
 from .plugins import EXECUTORS, TRANSPORT
 from .session import UbootSession
-
-
-def do_cmd(cfg, commands):
-    with UbootSession(cfg) as s:
-        ok, text = s.wait_prompt()
-        if not ok:
-            sys.exit('等待 U-Boot 提示符超时——设备可能正在启动或不在命令行。\n'
-                     f'最后输出: {text[-200:]!r}\n'
-                     '可先 power reset 后再试。')
-        for c in commands:
-            out = s.cmd(c)
-            # 去掉开头的命令回显
-            if out.startswith(c):
-                out = out[len(c):].lstrip('\r\n')
-            print(out.strip('\r\n'), flush=True)
 
 
 def _as_list(v):

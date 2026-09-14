@@ -10,15 +10,10 @@ U-Boot 2021.10,提示符 `soph#`),串口经 TCP 桥(gem12)透传,电源为小米
 ## 快速上手
 
 ```bash
-./boardctl.sh -b sg2002 run           # 列出该板一键启动目标
-./boardctl.sh -b sg2002 run hello     # 裸机测试:冷启动→传输→go→断言→断电
-./boardctl.sh -b sg2002 run script    # U-Boot 脚本测试
-./boardctl.sh -b sg2002 console       # 交互终端(Ctrl-\ 退出;配置 off_on_exit 时退出自动断电)
-./boardctl.sh -b sg2002 cmd 'printenv'
-./boardctl.sh -b sg2002 exec 'ls /srv/tftp'   # 在板卡命令环境执行 shell(配置 ssh_host 则经 ssh 远端执行)
-./boardctl.sh -b sg2002 send FILE [--method loady|tftp] [--addr 0x80080000]
-./boardctl.sh -b sg2002 power on|off|status
-./boardctl.sh -b sg2002 reset
+./boardctl.sh -b sg2002 run              # 列出该板的一键启动目标
+./boardctl.sh -b sg2002 run hello        # 全流程:冷启动→传输→执行→断言→断电
+./boardctl.sh -b sg2002 run hello -r 10  # 10 轮压测,汇总 N/10 PASS
+./boardctl.sh boards                     # 列出已配置开发板
 # 等价:./.venv/bin/python -m boardctl ...(任意目录可用 boardctl.sh)
 ```
 
@@ -30,12 +25,12 @@ boardctl/
 ├── config.py     板卡 TOML 加载(不依赖其他模块)
 ├── session.py    U-Boot 串口会话 ← config
 ├── power.py      电源/冷启动   ← config, session
-├── console.py    交互终端       ← config, session, power
-├── runner.py     run/cmd 编排   ← 上述全部 + plugins
+├── shell.py      命令执行(本机/ssh)← config
+├── runner.py     run 编排       ← 上述全部 + plugins
 └── plugins/      插件(目录约定自动发现,零注册代码)
     ├── transport/   传输插件:loady.py、tftp.py
     ├── executors/   执行插件:go.py、source.py、none.py、booti.py、bootm.py
-    └── power/       电源插件:mijia.py(原生小米云调用,免子进程)
+    └── power/       电源插件:mijia.py(原生小米云)、command.py(命令,默认)
 ```
 
 **插件接口**(接口约定写在各 `__init__.py` 里;插件可选声明 `CFG_SECTION` + `DEFAULTS` 自带配置默认值,TOML 优先):
@@ -53,13 +48,12 @@ boardctl/
 
 | 段 | 键 | 说明 |
 |---|---|---|
-| 顶层 | `ssh_host` | 命令执行位置:空 = 本机(power/exec 等);填 ssh 别名(如 `gem12`)= 经 ssh 在远端主机执行,别名/端口/用户走 `~/.ssh/config` |
+| 顶层 | `ssh_host` | 命令模式命令的执行位置:空 = 本机;填 ssh 别名(如 `gem12`)= 经 ssh 在远端主机执行,别名/端口/用户走 `~/.ssh/config` |
 | `[serial]` | `url` / `timeout` | 串口桥 URL(本板为 `socket://...` 裸 TCP) |
 | `[uboot]` | `prompt` / `load_addr` | 提示符、默认加载地址 |
 | | `server_ip` / `ensure_server_ip` | TFTP 服务器地址;该 U-Boot 无 saveenv,连接时自动恢复 |
 | `[power]` | `method = "mijia"` + `[power.mijia]` dev_name/did | **方式一·电源插件**:进程内原生调用小米云(凭证复用 `~/.config/mijia-api/auth.json`,首次需 `mijiaAPI login` 扫码),不走 ssh_host |
 | | `method = "command"` + `on_cmd`/`off_cmd`/`status_cmd` | **方式二·命令插件**:任意开关机 shell 命令(经 ssh_host 决定本机/远端);method 未配置时默认即此。改 `method` 一行切换 |
-| | `off_on_exit = true` | console 退出时自动断电(覆盖所有退出路径:Ctrl-\、Ctrl-A x、kill、串口掉线) |
 | `[tftp]` | `method=remote` + `ssh_host`/`remote_dir` | scp 到远端 tftpd(gem12 的 tftpd-hpa) |
 | | `method=local` + `local_dir` | 本机临时拉起 `tftp_server.py`(UDP 69 需特权,退出自动回收) |
 | `[loady]` | `sender` | Ymodem 发送器(Arch 为 `lrzsz-sb`) |
@@ -90,7 +84,7 @@ Python 3.11+(stdlib `tomllib`)+ pyserial。开发安装:`uv venv && uv pip insta
 
 ```bash
 # 从 PyPI 安装(发布后)
-pip install boardctl            # 核心:串口/console/cmd/send(loady)
+pip install boardctl            # 核心:run 全流程(loady/tftp 传输)
 pip install 'boardctl[mijia]'   # + 小米云电源插件
 
 # 板卡配置搜索顺序:$BOARDCTL_BOARDS → ./boards → ~/.config/boardctl/boards → 包内置示例

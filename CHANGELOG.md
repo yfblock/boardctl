@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 - 2026-09-15
+
+**破坏性变更**:CLI 命令面极简化。
+
+- 仅保留 `run`(一键全流程:冷启动→传输→执行→断言→收尾,`--repeat N` 压测)
+  与 `boards`(列出板卡)
+- 移除子命令:`console`、`power`、`reset`、`cmd`、`send`、`exec`;
+  对应能力仍在:电源操作由 run 的 `reset_before`/`after` 与电源插件覆盖,
+  传输/执行插件由 run 的 `method`/`exec` 驱动,均可经 Python API 使用
+- `console` 交互终端模块随子命令移除(`off_on_exit` 配置项随之删除)
+- 删除 boards/run.sh:开关机命令直接内联进板卡配置(command 电源模式安装态可用)
+- e2e/verify_e2e.py 改为 Python API 驱动(不再依赖 CLI 子命令)
+
 ## 0.2.0 - 2026-09-15
 
 - 新增执行插件:`booti`(引导 Linux raw 内核,run 目标 fdt 必需 / initrd 可选)、
