@@ -23,8 +23,8 @@ method = "mijia"              # 方式一:原生插件,进程内直连小米云(
 reset_delay = 3                    # 断电到上电的间隔(秒)
 off_on_exit = true                 # console 退出时自动断电(任何退出路径)
 # 方式二的命令(method = "command" 时生效;经顶层 ssh_host 决定本机/远端执行):
-on_cmd = "boards/run.sh 1"              # 开机命令
-off_cmd = "boards/run.sh 0"             # 关机命令
+on_cmd = "mijiaAPI set --dev_name sg2002 --prop_name on --value 1"    # 开机命令
+off_cmd = "mijiaAPI set --dev_name sg2002 --prop_name on --value 0"   # 关机命令
 status_cmd = "mijiaAPI get --dev_name sg2002 --prop_name on"   # 查状态(可选)
 
 [power.mijia]                      # 方式一的参数:dev_name 或 did 二选一
