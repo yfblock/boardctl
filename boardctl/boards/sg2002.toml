@@ -58,11 +58,13 @@ expect = [                         # 输出必须全部包含这些标记才算 
 ]
 
 [run.script]
-desc = "U-Boot 脚本(source 执行,三标记后干净返回,设备保持开机)"
+desc = "U-Boot 脚本(source 执行,自动开关机,三标记断言)"
 file = "e2e/script/test_uboot.scr"
 exec = "source"
 method = "tftp"
 timeout = 8
+reset_before = true             # 自动开机:关→开→等 U-Boot 提示符
+after = "off"                   # 自动关机:跑完断电
 expect = ["SCRIPT-START", "SCRIPT-MIDDLE", "SCRIPT-DONE"]
 fail_re = ["Unknown command"]       # 正则:命中即 FAIL(expect_re 则是必须命中的正则)
 
