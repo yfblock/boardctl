@@ -15,3 +15,4 @@ tftpboot/
 .ruff_cache/
 
 # 测试构建产物特意保留(tests/ 下的小体积固件,便于无工具链环境复现 verify_e2e)
+.vscode/

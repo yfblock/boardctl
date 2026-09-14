@@ -19,5 +19,9 @@ boardctl = "boardctl.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["boardctl"]
 
-# 板卡示例配置就在 boardctl/boards/(包数据随包分发);
+# 源码树的板卡示例在项目根 boards/(开发可见可改);
+# 打 wheel 时映射进包内(boardctl/boards/)随包分发。
+# 只对 wheel 做映射:sdist 保留根目录原位,否则"从 sdist 构建 wheel"时源路径会找不到。
 # 用户自己的板卡放 ~/.config/boardctl/boards/ 或 $BOARDCTL_BOARDS,优先级更高
+[tool.hatch.build.targets.wheel.force-include]
+"boards" = "boardctl/boards"
