@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 - 2026-09-15
+
+**破坏性变更**:`boards` 子命令更名为 `ls`。
+
+- **打断关机保证**:`run` 执行中若被 Ctrl-C / SIGTERM 打断或发生未捕获异常,
+  且板卡处于开机状态,自动执行一次关机——保证程序结束后设备是关的;
+  正常完成的收尾仍由 `[run].after` 决定(off/reset/none)
+
 ## 0.3.1 - 2026-09-15
 
 - 板卡配置解析收窄:**只认 `~/.config/boardctl/boards/`**(`$BOARDCTL_BOARDS` 可临时

@@ -13,7 +13,7 @@ U-Boot 2021.10,提示符 `soph#`),串口经 TCP 桥(gem12)透传,电源为小米
 ./boardctl.sh -b sg2002 run              # 列出该板的一键启动目标
 ./boardctl.sh -b sg2002 run hello        # 全流程:冷启动→传输→执行→断言→断电
 ./boardctl.sh -b sg2002 run hello -r 10  # 10 轮压测,汇总 N/10 PASS
-./boardctl.sh boards                     # 列出已配置开发板
+./boardctl.sh ls                        # 列出已配置开发板
 # 等价:./.venv/bin/python -m boardctl ...(任意目录可用 boardctl.sh)
 ```
 
