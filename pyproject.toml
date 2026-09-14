@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "boardctl"
+version = "0.1.0"
+description = "开发板控制工具:串口终端 / 电源控制 / 文件传输(TFTP、Ymodem) / 一键启动测试,插件化架构(设计参考 ostool)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["pyserial>=3.5"]
+
+[project.optional-dependencies]
+mijia = ["mijiaapi>=4"]   # 电源插件 boardctl.plugins.power.mijia 需要(懒加载,未装不影响其他功能)
+
+[project.scripts]
+boardctl = "boardctl.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["boardctl"]
+
+# 板卡示例配置就在 boardctl/boards/(包数据随包分发);
+# 用户自己的板卡放 ~/.config/boardctl/boards/ 或 $BOARDCTL_BOARDS,优先级更高

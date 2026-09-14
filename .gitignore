@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# 运行时数据目录(本地 TFTP 根目录,内容按需自建)
+tftpboot/
+
+# 工具缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 测试构建产物特意保留(tests/ 下的小体积固件,便于无工具链环境复现 verify_e2e)

@@ -1,0 +1,21 @@
+部署文件是 test_uboot.scr(带 legacy uImage 头的脚本镜像,由 build_script.sh 生成)。
+
+U-Boot `source 0x80080000` 执行后,串口上应依次出现:
+
+## Executing script at 80080000
+SCRIPT-START
+SCRIPT-MIDDLE
+SCRIPT-DONE
+soph#
+
+- "## Executing script at ..." 是 source 命令自身的输出
+- itest 已移除(该 U-Boot 构建未编译 itest,会打印 "Unknown command");现夹的是
+  setenv(静默、必成功,该构建必有),输出不含任何报错行
+- 标记行由 echo 产生,行尾是 \r\n(U-Boot 控制台风格,与裸机测试只发 \n 不同)
+- 脚本执行完自动回到 soph# 提示符,无需 reset
+
+镜像结构自检数据(2026.07 mkimage 生成,已对照 v2021.10 cmd/source.c 解析逻辑):
+magic 27051956 / type=6(Script) / comp=0 / hcrc=221537e8 / dcrc=92ea0a40 均复核一致;
+数据区 = 8 字节尺寸表(00 00 00 60, 00 00 00 00)+ 96 字节脚本文本 —— v2021.10 的
+legacy 解析路径(u32 长度表 NUL 结尾 + 文本)完全匹配。
+(hcrc/dcrc 以当前文件实际值复核,总 168 字节,ih_size=104)

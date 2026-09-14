@@ -1,0 +1,67 @@
+# Sophgo SG2002 开发板(Cvitek / RISC-V 玄铁 C906 / U-Boot 2021.10)
+description = "Sophgo SG2002 (RISC-V C906, U-Boot 2021.10, soph# 提示符)"
+
+# 命令执行位置:留空 = power/exec 等命令在本机执行;
+# 填 ssh 别名(如 "gem12")= 这些命令经 ssh 在该主机上执行(别名/端口/用户走 ~/.ssh/config)
+ssh_host = ""
+
+[serial]
+url = "socket://172.16.0.7:5000"   # 串口桥(gem12 的 VPN 地址),裸 TCP 透传
+timeout = 0.2
+
+[uboot]
+prompt = "soph#"
+load_addr = "0x80080000"
+ip_addr = "192.168.1.201"          # 设备自身 IP(静态)
+server_ip = "192.168.1.9"          # TFTP 服务器 = gem12 的 wlan 口
+ensure_server_ip = true            # 该构建无 saveenv,每次连接自动恢复 serverip
+
+[power]
+# 两种方式二选一(改 method 一行切换):
+method = "mijia"              # 方式一:原生插件,进程内直连小米云(参数见 [power.mijia])
+# method = "command"              # 方式二:特制开关机命令(用下面的 on_cmd/off_cmd/status_cmd)
+reset_delay = 3                    # 断电到上电的间隔(秒)
+off_on_exit = true                 # console 退出时自动断电(任何退出路径)
+# 方式二的命令(method = "command" 时生效;经顶层 ssh_host 决定本机/远端执行):
+on_cmd = "./run.sh 1"              # 开机命令
+off_cmd = "./run.sh 0"             # 关机命令
+status_cmd = "mijiaAPI get --dev_name sg2002 --prop_name on"   # 查状态(可选)
+
+[power.mijia]                      # 方式一的参数:dev_name 或 did 二选一
+dev_name = "sg2002"                # 米家里的设备名(即插座命名)
+
+[tftp]
+method = "remote"                  # remote: scp 到远端 tftp 目录 | local: 本机起内置 tftp 服务器
+ssh_host = "gem12"
+remote_dir = "/srv/tftp"           # 需一次性: ssh -t gem12 'sudo chown $USER /srv/tftp'
+local_dir = "tftpboot"             # method=local 时的根目录
+
+[loady]
+sender = "/usr/bin/lrzsz-sb"       # Arch 的 lrzsz;Debian/Ubuntu 为 /usr/bin/sb
+
+# 一键启动目标:boardctl.py -b sg2002 run <名字>(省略名字列出全部)
+[run.hello]
+desc = "RISC-V 裸机测试(冷启动→go 跳转→5 行标记→断电收尾)"
+file = "tests/baremetal/hello.bin"
+addr = "0x80080000"                # 加载地址(send/run 默认取 uboot.load_addr,可省)
+# entry = "0x80080010"             # 跳转地址(go 的目标);缺省 = addr。加载和入口不同时用它
+exec = "go"                        # go / source / none(只加载不执行)
+method = "tftp"
+timeout = 8                        # 执行后收集输出的秒数
+reset_before = true                # 关 → 开 → 等 U-Boot 提示符,从确定状态开始
+after = "off"                      # 收尾:off 断电 | reset 重启回提示符 | none 保持
+expect = [                         # 输出必须全部包含这些标记才算 PASS(缺省则不判定)
+  "BM-TEST-START",
+  "BM-COUNTER-1",
+  "BM-COUNTER-2",
+  "BM-COUNTER-3",
+  "BM-TEST-DONE",
+]
+
+[run.script]
+desc = "U-Boot 脚本(source 执行,三标记后干净返回,设备保持开机)"
+file = "tests/script/test_uboot.scr"
+exec = "source"
+method = "tftp"
+timeout = 8
+expect = ["SCRIPT-START", "SCRIPT-MIDDLE", "SCRIPT-DONE"]

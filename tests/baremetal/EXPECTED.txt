@@ -1,0 +1,13 @@
+BM-TEST-START\nBM-COUNTER-1\nBM-COUNTER-2\nBM-COUNTER-3\nBM-TEST-DONE\n
+
+(上行是逐字节转义表示,共 66 字节:每行标记 + \n,不含 \r)
+串口上实际观察到的应是:
+
+BM-TEST-START
+BM-COUNTER-1
+BM-COUNTER-2
+BM-COUNTER-3
+BM-TEST-DONE
+
+打印完毕后程序进入 wfi 死循环,串口再无输出 —— 这是预期行为,
+恢复设备需要: ./.venv/bin/python boardctl.py -b sg2002 reset
