@@ -1,0 +1,20 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags: ['v*']   # 打 tag(如 v0.1.0)自动构建发布
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # PyPI trusted publishing (OIDC) 必需
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+      - name: Build
+        run: uv build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
