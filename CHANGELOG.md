@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0 - 2026-09-15
+
+- 新增执行插件:`booti`(引导 Linux raw 内核,run 目标 fdt 必需 / initrd 可选)、
+  `bootm`(legacy uImage)
+- `run --repeat N`:多轮压测,每轮冷启动(repeat>1 自动启用 reset_before),
+  结束输出 `N/M 轮 PASS` 汇总,任一轮失败退出码 1
+- 断言引擎增强(`expect` 保持子串语义,新增):
+  - `expect_re`:正则列表,必须全部命中
+  - `fail_re`:正则列表,命中即 FAIL(如 `panic`、`Unknown command`)
+- 执行插件接口扩展:`build_cmd(addr, t)` 第二参数为 run 目标配置表
+  (booti/bootm 用它读取 fdt/initrd)
+- 目录重组:boards/(板卡配置+板级资产)、examples/、tests/(纯软件)、
+  e2e/(真机验收);删除 requirements.txt 与 main.py;新增 LICENSE(MIT)、
+  CHANGELOG、CI(push/PR 自动编译+软件测试+构建检查)
+
 ## 0.1.0 - 2026-09-15
 
 首发版本:插件化开发板控制工具(设计参考 [ostool](https://crates.io/crates/ostool))。

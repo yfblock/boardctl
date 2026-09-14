@@ -29,6 +29,8 @@ def main():
     p_send.add_argument('--addr', help='加载地址(默认取板卡 uboot.load_addr)')
     p_run = sub.add_parser('run', help='按板卡配置的 [run.<名字>] 一键启动')
     p_run.add_argument('name', nargs='?', help='启动目标名(省略则列出可用目标)')
+    p_run.add_argument('--repeat', '-r', type=int, default=1, metavar='N',
+                       help='重复轮数(>1 时每轮冷启动,结束汇总 PASS/FAIL)')
     p_exec = sub.add_parser('exec', help='在板卡命令环境执行 shell 命令(配置 ssh_host 则经 ssh 远端执行)')
     p_exec.add_argument('command', nargs='+')
     sub.add_parser('boards', help='列出开发板')
@@ -60,7 +62,7 @@ def main():
         ok = TRANSPORT[args.method].send(cfg, args.file, addr)
         sys.exit(0 if ok else 1)
     elif args.op == 'run':
-        runner.do_run(cfg, args.name)
+        runner.do_run(cfg, args.name, repeat=args.repeat)
     elif args.op == 'exec':
         r = shell.run(cfg, ' '.join(args.command), check=False, capture=True)
         sys.stdout.write(r.stdout or '')

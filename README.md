@@ -34,7 +34,7 @@ boardctl/
 ├── runner.py     run/cmd 编排   ← 上述全部 + plugins
 └── plugins/      插件(目录约定自动发现,零注册代码)
     ├── transport/   传输插件:loady.py、tftp.py
-    ├── executors/   执行插件:go.py、source.py、none.py
+    ├── executors/   执行插件:go.py、source.py、none.py、booti.py、bootm.py
     └── power/       电源插件:mijia.py(原生小米云调用,免子进程)
 ```
 
@@ -63,11 +63,12 @@ boardctl/
 | `[tftp]` | `method=remote` + `ssh_host`/`remote_dir` | scp 到远端 tftpd(gem12 的 tftpd-hpa) |
 | | `method=local` + `local_dir` | 本机临时拉起 `tftp_server.py`(UDP 69 需特权,退出自动回收) |
 | `[loady]` | `sender` | Ymodem 发送器(Arch 为 `lrzsz-sb`) |
-| `[run.<名字>]` | `file` / `exec` / `method` / `timeout` | 一键启动目标(exec/method 即插件名) |
+| `[run.<名字>]` | `file` / `exec` / `method` / `timeout` | 一键启动目标(exec/method 即插件名;`run --repeat N` 多轮压测,每轮冷启动并汇总) |
 | | `addr` / `entry` | 加载地址 / 跳转执行地址(`go 0x...` 的目标);缺省都取 `uboot.load_addr`,加载与入口不同时分别指定 |
+| | `fdt` / `initrd` | booti 执行插件附加键:设备树地址(必需)/ initrd 地址(可选) |
 | | `reset_before` | 开头冷启动:关→开→等提示符(从任意脏状态恢复) |
 | | `after = off/reset/none` | 收尾动作 |
-| | `expect = [..]` | 输出断言,全命中才 PASS(退出码 0/1) |
+| | `expect = [..]` | 输出断言(子串,全命中才 PASS);`expect_re` 正则版;`fail_re` 正则禁止命中(如 panic);退出码 0/1 |
 
 ## 端到端验收
 

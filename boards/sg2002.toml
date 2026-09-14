@@ -65,3 +65,16 @@ exec = "source"
 method = "tftp"
 timeout = 8
 expect = ["SCRIPT-START", "SCRIPT-MIDDLE", "SCRIPT-DONE"]
+fail_re = ["Unknown command"]       # 正则:命中即 FAIL(expect_re 则是必须命中的正则)
+
+# 引导 Linux 内核示例(booti:file=Image,另传 fdt;initrd 可选):
+# [run.kernel]
+# file = "Image"
+# exec = "booti"
+# addr = "0x80080000"               # 内核加载地址
+# fdt = "0x83000000"                # 设备树加载地址(booti 必需)
+# initrd = "0x82000000"             # 可选
+# reset_before = true
+# after = "off"
+# expect_re = ["Starting kernel", "Booting Linux"]
+# fail_re = ["panic", "ERROR:"]

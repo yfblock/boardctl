@@ -3,5 +3,5 @@
 NAME = 'none'
 
 
-def build_cmd(addr):
+def build_cmd(addr, t=None):
     return None

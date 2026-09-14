@@ -1,6 +1,7 @@
-"""run / cmd 编排:冷启动 -> 传输(插件) -> 执行(插件) -> expect 断言 -> 收尾"""
+"""run / cmd 编排:冷启动 -> 传输(插件) -> 执行(插件) -> 断言 -> 收尾;
+repeat > 1 时循环多轮(每轮冷启动)并汇总 PASS/FAIL"""
 import os
-import subprocess
+import re
 import sys
 
 from . import power
@@ -24,21 +25,36 @@ def do_cmd(cfg, commands):
             print(out.strip('\r\n'), flush=True)
 
 
-def do_run(cfg, name):
-    """按板卡配置里的 [run.<名字>] 一键启动:(可选冷启动) -> 传输 -> 执行 -> 收尾"""
-    targets = cfg.get('run', {})
-    if not name:
-        if not targets:
-            sys.exit(f'{cfg["name"]} 配置里没有 [run.*] 启动目标')
-        print(f'{cfg["name"]} 可启动目标(boardctl run <名字>):')
-        for k, t in targets.items():
-            desc = t.get('desc', '')
-            print(f'  {k:12} exec={t.get("exec", "none"):8} {t.get("file", "")}  {desc}')
-        return
-    if name not in targets:
-        sys.exit(f'未定义的启动目标 {name!r},可用: {" ".join(targets) or "(无)"}')
-    t = targets[name]
+def _as_list(v):
+    return [v] if isinstance(v, str) else (v or [])
 
+
+def evaluate(out, t):
+    """断言输出。规则:
+    expect     子串列表,必须全部出现(向后兼容)
+    expect_re  正则列表,必须全部 re.search 命中
+    fail_re    正则列表,必须全部不命中(如 panic/FAIL 自动判负)
+    返回 (是否PASS, 问题摘要, 是否配置了断言)
+    """
+    problems = []
+    for e in _as_list(t.get('expect')):
+        if e not in out:
+            problems.append(f'expect 未出现: {e!r}')
+    for p in _as_list(t.get('expect_re')):
+        if not re.search(p, out):
+            problems.append(f'expect_re 未匹配: {p!r}')
+    for p in _as_list(t.get('fail_re')):
+        if re.search(p, out):
+            problems.append(f'fail_re 命中: {p!r}')
+    checked = bool(problems is not None and
+                   (_as_list(t.get('expect')) or _as_list(t.get('expect_re'))
+                    or _as_list(t.get('fail_re'))))
+    return (not problems), '; '.join(problems), checked
+
+
+def _execute_target(cfg, name, t):
+    """执行单轮:冷启动 -> 传输 -> 执行 -> 断言 -> 收尾。
+    返回 True/False(expect 判定结果;未配置断言时返回 True);基础设施错误直接退出。"""
     if t.get('reset_before'):
         print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
         power.power_cycle_and_wait(cfg)
@@ -63,10 +79,10 @@ def do_run(cfg, name):
     executor = EXECUTORS.get(exec_mode)
     if executor is None:
         sys.exit(f'未知 exec 方式: {exec_mode}(可用: {" ".join(sorted(EXECUTORS))})')
-    cmdline = executor.build_cmd(entry)
+    cmdline = executor.build_cmd(entry, t)
     if cmdline is None:
         print(f'[{name}] 已加载到 {addr}(exec={exec_mode},未执行)')
-        return
+        return True
 
     timeout = float(t.get('timeout', 15))
     print(f'[{name}] 执行: {cmdline}', flush=True)
@@ -77,24 +93,50 @@ def do_run(cfg, name):
         out = s.cmd(cmdline, timeout)
         print(out.strip('\r\n'), flush=True)
 
-    # 期望断言:expect 为字符串或字符串列表,全部命中才算 PASS
-    expects = t.get('expect')
-    if isinstance(expects, str):
-        expects = [expects]
-    verdict = None
-    if expects:
-        missing = [e for e in expects if e not in out]
-        verdict = 'PASS' if not missing else f'FAIL(未出现: {missing})'
-        print(f'[{name}] 结果: {verdict}', flush=True)
+    ok, detail, checked = evaluate(out, t)
+    if checked:
+        print(f'[{name}] 结果: {"PASS" if ok else "FAIL"}' + (f'({detail})' if detail else ''),
+              flush=True)
 
     # 收尾:off 断电 | reset 重启回提示符 | none 保持现状(兼容旧的 reset_after 布尔)
     after = t.get('after', 'reset' if t.get('reset_after') else 'none')
     if after == 'off':
         print(f'[{name}] 断电收尾(after=off)', flush=True)
         power.power_off(cfg)
-        print(f'[{name}] 已断电,流程结束', flush=True)
+        print(f'[{name}] 已断电', flush=True)
     elif after == 'reset':
         print(f'[{name}] 输出结束,重启回提示符(after=reset)', flush=True)
         power.do_reset(cfg)
-    if verdict is not None and not verdict.startswith('PASS'):
-        sys.exit(1)
+    return ok if checked else True
+
+
+def do_run(cfg, name, repeat=1):
+    """按板卡配置里的 [run.<名字>] 一键启动;repeat>1 时循环并汇总"""
+    targets = cfg.get('run', {})
+    if not name:
+        if not targets:
+            sys.exit(f'{cfg["name"]} 配置里没有 [run.*] 启动目标')
+        print(f'{cfg["name"]} 可启动目标(boardctl run <名字>):')
+        for k, t in targets.items():
+            desc = t.get('desc', '')
+            print(f'  {k:12} exec={t.get("exec", "none"):8} {t.get("file", "")}  {desc}')
+        return
+    if name not in targets:
+        sys.exit(f'未定义的启动目标 {name!r},可用: {" ".join(targets) or "(无)"}')
+    t = dict(targets[name])   # 复制,repeat 注入不污染原配置
+
+    total = max(1, int(repeat))
+    if total > 1 and not t.get('reset_before'):
+        print(f'[{name}] repeat>1,自动启用 reset_before(每轮冷启动)', flush=True)
+        t['reset_before'] = True
+
+    results = []
+    for i in range(1, total + 1):
+        if total > 1:
+            print(f'===== 第 {i}/{total} 轮 =====', flush=True)
+        results.append(_execute_target(cfg, name, t))
+
+    if total > 1:
+        p = sum(1 for r in results if r)
+        print(f'[{name}] 汇总: {p}/{total} 轮 PASS' + (' ✅' if p == total else ' ❌'))
+    sys.exit(0 if all(results) else 1)
