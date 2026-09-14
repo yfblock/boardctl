@@ -7,6 +7,7 @@ name = "boardctl"
 version = "0.1.0"
 description = "开发板控制工具:串口终端 / 电源控制 / 文件传输(TFTP、Ymodem) / 一键启动测试,插件化架构(设计参考 ostool)"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = ["pyserial>=3.5"]
 

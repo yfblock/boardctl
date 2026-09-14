@@ -72,17 +72,18 @@ boardctl/
 ## 端到端验收
 
 ```bash
-./.venv/bin/python tests/verify_e2e.py     # reset→tftp 部署→原始流逐字节断言,两套测试
+./.venv/bin/python e2e/verify_e2e.py     # reset→tftp 部署→原始流逐字节断言,两套测试
 ```
 
-裸机测试:`tests/baremetal/`(riscv64-linux-gnu-gcc,注意 DW APB UART reg-shift=2、
-`-fno-pie`、`--build-id=none`)。脚本测试:`tests/script/`(`source` 需 mkimage 的
-legacy uImage 头)。构建细节与踩坑记录见 `tests/README.md`。
+裸机测试:`e2e/baremetal/`(riscv64-linux-gnu-gcc,注意 DW APB UART reg-shift=2、
+`-fno-pie`、`--build-id=none`)。脚本测试:`e2e/script/`(`source` 需 mkimage 的
+legacy uImage 头)。构建细节与踩坑记录见 `e2e/README.md`。
 
 ## 依赖
 
-Python 3.11+(stdlib `tomllib`)+ pyserial(见 requirements.txt)。交叉构建另需
-`riscv64-linux-gnu-gcc`、`mkimage`(uboot-tools)、`lrzsz`。
+Python 3.11+(stdlib `tomllib`)+ pyserial。开发安装:`uv venv && uv pip install -e '.[mijia]'`
+(依赖唯一事实来源是 pyproject.toml)。交叉构建另需 `riscv64-linux-gnu-gcc`、
+`mkimage`(uboot-tools)、`lrzsz`。
 
 ## 安装与发布
 
@@ -102,4 +103,3 @@ uv publish --token <PyPI_API_Token>   # 建议先发 TestPyPI 演练
 可选发布路径:GitHub 仓库 + Actions trusted publishing(打 tag 自动发布,免 token),
 或直接 `pip install git+https://...`(零发布设施,适合私有/内网)。
 
-## 依赖

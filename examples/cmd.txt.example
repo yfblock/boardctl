@@ -1,0 +1,12 @@
+# 把本文件复制为 cmd.txt 后,设备每次启动会执行这里的内容
+# (U-Boot 脚本,# 开头是注释;文件不存在时设备照旧走 SD 卡后备路径)
+#
+# 例 1: 加长倒计时并保存(以后每次启动都能用串口按键拦下 autoboot)
+# setenv bootdelay 10
+# saveenv
+# reset
+#
+# 例 2: 启动后卡在这里,等串口 Ctrl-C 进命令行(无持久改动)
+# sleep 5
+# sleep 5
+# sleep 5

@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+      - name: Compile check
+        run: uv run python -m compileall -q boardctl tests e2e
+      - name: Software tests
+        run: uv run python tests/test_software.py
+      - name: Build check
+        run: uv build

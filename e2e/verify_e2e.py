@@ -2,7 +2,7 @@
 """端到端验收:部署两套测试到 SG2002 并逐字节比对串口原始输出。
 
 前置:板卡在 U-Boot 提示符(或任意状态,脚本会先 reset)。
-用法:../../.venv/bin/python verify_e2e.py   (在 tests/ 下)
+用法:../../.venv/bin/python verify_e2e.py   (在 e2e/ 下)
 """
 import os
 import socket
@@ -60,7 +60,7 @@ failures = 0
 phase_reset()
 print('== 测试 1:裸机程序 ==', flush=True)
 sh(BOARDCTL, '-m', 'boardctl', '-b', 'sg2002', 'send',
-   'tests/baremetal/hello.bin', '--method', 'tftp', '--addr', '0x80080000')
+   'e2e/baremetal/hello.bin', '--method', 'tftp', '--addr', '0x80080000')
 out = run_capture('go 0x80080000', 8)
 if BM_EXPECTED in out:
     print('PASS: 66 字节标记流逐字节一致')
@@ -74,7 +74,7 @@ else:
 phase_reset()
 print('== 测试 2:U-Boot 脚本 ==', flush=True)
 sh(BOARDCTL, '-m', 'boardctl', '-b', 'sg2002', 'send',
-   'tests/script/test_uboot.scr', '--method', 'tftp', '--addr', '0x80080000')
+   'e2e/script/test_uboot.scr', '--method', 'tftp', '--addr', '0x80080000')
 out = run_capture('source 0x80080000', 8)
 ok = SCR_EXPECTED in out and b'Unknown command' not in out and b'soph#' in out
 if ok:
