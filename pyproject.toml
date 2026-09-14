@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "boardctl"
-version = "0.3.0"
-description = "开发板控制工具:串口终端 / 电源控制 / 文件传输(TFTP、Ymodem) / 一键启动测试,插件化架构(设计参考 ostool)"
+version = "0.3.1"
+description = "开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),插件化传输/执行/电源,板卡配置于 ~/.config/boardctl"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -20,9 +20,5 @@ boardctl = "boardctl.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["boardctl"]
 
-# 源码树的板卡示例在项目根 boards/(开发可见可改);
-# 打 wheel 时映射进包内(boardctl/boards/)随包分发。
-# 只对 wheel 做映射:sdist 保留根目录原位,否则"从 sdist 构建 wheel"时源路径会找不到。
-# 用户自己的板卡放 ~/.config/boardctl/boards/ 或 $BOARDCTL_BOARDS,优先级更高
-[tool.hatch.build.targets.wheel.force-include]
-"boards" = "boardctl/boards"
+# 板卡配置唯一来源是 ~/.config/boardctl/boards(或 $BOARDCTL_BOARDS);
+# boardctl/boards/ 只是随包分发的示例模板,最低优先级兜底

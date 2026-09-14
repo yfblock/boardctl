@@ -22,11 +22,11 @@ DEFAULTS = {
 
 def boards_dirs():
     """板卡配置目录搜索顺序(去重,仅保留存在的):
-    $BOARDCTL_BOARDS → 当前目录 boards/ → ~/.config/boardctl/boards → 包内置示例
+    $BOARDCTL_BOARDS → ~/.config/boardctl/boards(用户配置,唯一推荐位置)→ 包内置示例
+    本地/项目文件夹不参与解析。
     """
     candidates = [
         os.environ.get('BOARDCTL_BOARDS'),
-        os.path.join(os.getcwd(), 'boards'),
         str(Path.home() / '.config' / 'boardctl' / 'boards'),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), 'boards'),
     ]

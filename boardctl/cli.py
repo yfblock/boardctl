@@ -25,8 +25,8 @@ def main():
     if args.op == 'boards':
         boards = available_boards()
         if not boards:
-            sys.exit('没有找到任何板卡配置(搜索:$BOARDCTL_BOARDS → ./boards → '
-                     '~/.config/boardctl/boards → 包内置)')
+            sys.exit('没有找到任何板卡配置。把板卡 TOML 放到 ~/.config/boardctl/boards/\n'
+                     '(模板可参考包内置示例 boardctl/boards/),或用 $BOARDCTL_BOARDS 指定目录')
         for name in sorted(boards):
             cfg = load_board(name)
             desc = f' — {cfg["description"]}' if cfg['description'] else ''

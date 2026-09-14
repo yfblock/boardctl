@@ -43,8 +43,8 @@ boardctl/
 
 ## 板卡配置(boards/*.toml)
 
-搜索顺序(先找到的优先):`$BOARDCTL_BOARDS` → 当前目录 `./boards` →
-**`~/.config/boardctl/boards/`(推荐:用户自己的板放这里)** → 包内置示例。
+板卡配置**只认 `~/.config/boardctl/boards/`**(搜索顺序:`$BOARDCTL_BOARDS` 覆盖 →
+`~/.config/boardctl/boards/` → 包内置示例兜底;本地/项目文件夹不参与解析)。
 
 | 段 | 键 | 说明 |
 |---|---|---|
@@ -87,8 +87,6 @@ Python 3.11+(stdlib `tomllib`)+ pyserial。开发安装:`uv venv && uv pip insta
 pip install boardctl            # 核心:run 全流程(loady/tftp 传输)
 pip install 'boardctl[mijia]'   # + 小米云电源插件
 
-# 板卡配置搜索顺序:$BOARDCTL_BOARDS → ./boards → ~/.config/boardctl/boards → 包内置示例
-# 用户自己的板卡放 ~/.config/boardctl/boards/(优先级高于包内置示例),不碰安装目录
 
 # 发布(项目根目录)
 uv build                        # 产出 dist/*.whl + *.tar.gz

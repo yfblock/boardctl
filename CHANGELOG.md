@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 - 2026-09-15
+
+- 板卡配置解析收窄:**只认 `~/.config/boardctl/boards/`**(`$BOARDCTL_BOARDS` 可临时
+  覆盖;包内置示例降为最低优先级模板)。本地/项目文件夹不再参与解析,
+  仓库根 boards/ 目录移除,示例移入包内(boardctl/boards/),打包不再需要 force-include
+
 ## 0.3.0 - 2026-09-15
 
 **破坏性变更**:CLI 命令面极简化。
