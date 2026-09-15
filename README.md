@@ -9,9 +9,6 @@ TOML 配置,**模块化 + 插件化**架构——一键全流程(冷启动 → �
 - 打断保证:Ctrl-C / kill 时若板在开机状态自动关机,程序结束后设备必为关
 - 板卡配置放 `~/.config/boardctl/boards/`,与代码完全解耦
 
-仓库以 Sipeed LicheeRv Nano(Sophgo SG2002 / RISC-V C906)作为持续真机验收板
-(见 `e2e/`,需要实际硬件)。
-
 ## 安装
 
 ```bash
@@ -87,7 +84,6 @@ boardctl/
 git clone https://github.com/yfblock/boardctl && cd boardctl
 uv venv && uv pip install -e '.[mijia]'   # 依赖唯一来源:pyproject.toml
 uv run python tests/test_software.py      # 纯软件测试(无需硬件)
-uv run python e2e/verify_e2e.py           # 真机验收(需要 SG2002 环境,见 e2e/README.md)
 ```
 
 发布:打 tag(`git tag vX.Y.Z && git push origin vX.Y.Z`)即经 GitHub Actions

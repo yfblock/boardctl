@@ -20,9 +20,6 @@ boardctl = "boardctl.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["boardctl"]
 
-# sdist 排除真机验收目录(含特定硬件环境信息,留在 GitHub 仓库即可,不入发布源码包)
-[tool.hatch.build.targets.sdist]
-exclude = ["e2e"]
 
 # 板卡配置唯一来源是 ~/.config/boardctl/boards(或 $BOARDCTL_BOARDS);
 # boardctl/boards/ 只是随包分发的示例模板,最低优先级兜底

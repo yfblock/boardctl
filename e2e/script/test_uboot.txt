@@ -1,5 +1,0 @@
-echo SCRIPT-START
-setenv sg2002_test 1
-echo SCRIPT-MIDDLE
-setenv sg2002_test 2
-echo SCRIPT-DONE

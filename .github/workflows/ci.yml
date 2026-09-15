@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile check
-        run: uv run python -m compileall -q boardctl tests e2e
+        run: uv run python -m compileall -q boardctl tests
       - name: Software tests
         run: uv run python tests/test_software.py
       - name: Build check
