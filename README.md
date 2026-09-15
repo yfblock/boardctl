@@ -78,6 +78,17 @@ boardctl/
 
 新建插件 = 加一个文件,`[run].method`/`exec`/`[power].method` 立即可用,核心零改动。
 
+## MCP(让 Claude 等客户端直接操控开发板)
+
+```bash
+pip install 'boardctl[mcp]'
+claude mcp add boardctl -- boardctl-mcp      # Claude Code;Desktop 填 mcpServers JSON 同理
+```
+
+之后模型可调用三个工具:`ls_boards`(列板卡与目标)、`power_status`(查电源)、
+`run_target`(真机全流程测试:自动开关机 → 传输 → 执行 → 断言,`repeat` 支持压测)。
+工具会真实控制硬件电源,描述中已注明;长任务注意客户端超时设置。
+
 ## 开发
 
 ```bash

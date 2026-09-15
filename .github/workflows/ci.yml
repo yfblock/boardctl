@@ -17,5 +17,7 @@ jobs:
         run: uv run python -m compileall -q boardctl tests
       - name: Software tests
         run: uv run python tests/test_software.py
+      - name: MCP tests
+        run: uv run --extra mcp python tests/test_mcp.py
       - name: Build check
         run: uv build

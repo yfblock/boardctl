@@ -1,5 +1,8 @@
 """run 编排:冷启动 -> 传输(插件) -> 执行(插件) -> 断言 -> 收尾;
-repeat > 1 时循环多轮(每轮冷启动)并汇总 PASS/FAIL"""
+repeat > 1 时循环多轮(每轮冷启动)并汇总 PASS/FAIL。
+CLI(do_run)实时打印;程序化调用用 run_collect(捕获输出,返回结构化结果)"""
+import contextlib
+import io
 import os
 import re
 import sys
@@ -125,3 +128,38 @@ def do_run(cfg, name, repeat=1):
         p = sum(1 for r in results if r)
         print(f'[{name}] 汇总: {p}/{total} 轮 PASS' + (' ✅' if p == total else ' ❌'))
     sys.exit(0 if all(results) else 1)
+
+
+def run_collect(cfg, name, repeat=1, tail_lines=60):
+    """程序化执行 run 目标(MCP/自动化用):捕获输出、不 sys.exit,返回结构化结果。
+    stderr 不捕获(留给日志);基础设施错误转为该轮 error 而非抛出。"""
+    targets = cfg.get('run', {})
+    if name not in targets:
+        return {'error': f'未定义的启动目标 {name!r}',
+                'available': sorted(targets)}
+    t = dict(targets[name])
+
+    total = max(1, int(repeat))
+    if total > 1 and not t.get('reset_before'):
+        t['reset_before'] = True
+
+    rounds = []
+    for i in range(1, total + 1):
+        buf = io.StringIO()
+        ok, err = False, None
+        try:
+            with contextlib.redirect_stdout(buf):
+                ok = _execute_target(cfg, name, t)
+        except SystemExit as e:
+            err = str(e.code) if isinstance(e.code, str) else f'exit {e.code}'
+        output = buf.getvalue()
+        rounds.append({
+            'round': i,
+            'pass': bool(ok) and err is None,
+            'error': err,
+            'output_tail': '\n'.join(output.splitlines()[-tail_lines:]),
+        })
+    passed = sum(1 for r in rounds if r['pass'])
+    return {'board': cfg['name'], 'target': name, 'repeat': total,
+            'rounds': rounds, 'passed': passed, 'failed': total - passed,
+            'all_pass': passed == total}

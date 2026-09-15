@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 - 2026-09-15
+
+- **MCP server**:`pip install 'boardctl[mcp]'` 后 `claude mcp add boardctl --
+  boardctl-mcp` 即可让 Claude 等客户端直接操控开发板
+  - 工具:`ls_boards`(列板卡与目标)/ `power_status`(查电源)/
+    `run_target`(真机全流程测试,repeat 支持压测;会真实控制硬件电源)
+  - 兼容 mcp 1.x(FastMCP)与 2.x(MCPServer)
+  - 新增 `runner.run_collect()`:程序化执行 API,捕获输出返回结构化结果
+    (CLI 实时打印行为不变);tests/test_mcp.py 协议级冒烟进 CI
+
 ## 0.4.4 - 2026-09-15
 
 - 泄漏修正:CHANGELOG 条目不再提及具体内网地址;真机验收目录(含特定硬件
