@@ -46,6 +46,9 @@ timeout = 10                       # 执行后收集输出的秒数
 reset_before = true                # 自动开机:关→开→等提示符(不依赖设备初始状态)
 after = "off"                      # 收尾:off 断电 / reset 回提示符 / none 保持
 expect = ["BM-TEST-START"]         # 输出断言(子串);expect_re 正则版;fail_re 禁止命中
+                                  # 正向断言全部命中即提前收工(流式,不等满 timeout)
+# interactive = true              # 交互模式(TTY):输出实时流 + stdin 转发进设备
+                                  # (go/booti 进内核后可继续敲命令),Ctrl-\ 退出
 # fail_re = ["panic"]
 
 # 引导 Linux 内核示例(booti:file=Image,fdt 必需,initrd 可选):

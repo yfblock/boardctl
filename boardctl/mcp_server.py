@@ -36,8 +36,9 @@ def _tool_guard(fn):
 
 
 def _format_round(r):
-    head = f"第 {r['round']} 轮: {'PASS' if r['pass'] else 'FAIL'}" \
-           + (f"({r['error']})" if r.get('error') else '')
+    head = (f"第 {r['round']} 轮: {'PASS' if r['pass'] else 'FAIL'}"
+         + (f",结束={r.get('ended', '?')}" if r.get('ended') else '')
+         + (f"({r['error']})" if r.get('error') else ''))
     return head + '\n' + r.get('output_tail', '')
 
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0 - 2026-09-15
+
+- **流式执行**:run 的执行阶段改为实时流式输出(不再整段等满 timeout 才打印)
+  - 正向断言(expect/expect_re)全部命中 → 提前收工:死循环类目标(如 go 裸机)
+    从"等满 timeout"变为"标记出完即收"
+  - 提示符重现即收(source 等回提示符的执行器)
+- **交互模式** `[run].interactive = true`(TTY):输出实时流 + stdin 原样转发进设备
+  ——`go`/`booti` 进入内核后可直接在 run 会话里输入;`Ctrl-\` 退出
+  (非 TTY/MCP 自动退化为流式+限时,行为兼容)
+- run_collect 轮结果新增 `ended` 字段(prompt/matched/timeout/user/loaded)
+
 ## 0.5.0 - 2026-09-15
 
 - **MCP server**:`pip install 'boardctl[mcp]'` 后 `claude mcp add boardctl --

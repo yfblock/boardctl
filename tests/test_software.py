@@ -63,7 +63,47 @@ for name, t in cfg['run'].items():
     assert os.path.isfile(path) or cfg['name'] == 'example', \
         f'run.{name} 文件缺失: {path}'
 
-# 6. 电源语义层导入无误
+# 6. 流式执行引擎(伪串口,无需硬件)
+import time as _time  # noqa: E402
+
+from boardctl import runner as _runner  # noqa: E402
+
+
+class _FakeSer:
+    def __init__(self, chunks):
+        self.chunks = list(chunks)
+        self.written = b''
+
+    def read(self, n):
+        _time.sleep(0.01)
+        return self.chunks.pop(0) if self.chunks else b''
+
+    def write(self, b):
+        self.written += b
+
+
+def _stream(ser, t, **kw):
+    import contextlib, io as _io
+    buf = _io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        return _runner._stream_run(ser, 'go x', kw.get('prompt', 'soph#'),
+                                   t, False, kw.get('timeout', 1.0))
+
+
+out, ended = _stream(_FakeSer([b'BM-TEST-START\nBM-TEST-DONE\n']),
+                     {'expect': ['BM-TEST-START', 'BM-TEST-DONE']})
+assert ended == 'matched' and 'BM-TEST-DONE' in out, (ended, out)
+
+out, ended = _stream(_FakeSer([b'output line\r\nsoph# ']), {})
+assert ended == 'prompt', ended
+
+out, ended = _stream(_FakeSer([]), {}, timeout=0.3)
+assert ended == 'timeout', ended
+
+out, ended = _stream(_FakeSer([b'kernel booting...']), {}, timeout=0.3)
+assert ended == 'timeout' and 'kernel booting' in out, (ended, out)
+
+# 7. 电源语义层导入无误
 from boardctl import power  # noqa: E402,F401
 
 print('software tests: OK')
