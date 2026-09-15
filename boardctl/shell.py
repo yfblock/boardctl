@@ -2,7 +2,7 @@
 
 - ssh_host 为空:本机 /bin/sh -c 执行,工作目录 = 项目根(./run.sh 这类相对路径可用)
 - ssh_host 非空:ssh <host> <command>,由远端 shell 解释;命令需自含路径
-  (主机别名/端口/用户走 ~/.ssh/config,如 gem12)
+  (主机别名/端口/用户走 ~/.ssh/config,如 myserver)
 """
 import subprocess
 

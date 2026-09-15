@@ -1,5 +1,5 @@
 """tftp 传输插件:设备端 tftpboot 拉取。文件就位方式由 [tftp].method 决定:
-remote = scp 到远端 tftp 服务器(gem12 的 tftpd-hpa);
+remote = scp 到远端 tftp 服务器(如 tftpd-hpa);
 local  = 本机临时拉起 tftp_server.py(UDP 69 需要特权)。
 """
 import atexit

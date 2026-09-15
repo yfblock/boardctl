@@ -46,20 +46,22 @@ assert not ok and 'fail_re' in detail
 ok, detail, checked = evaluate('anything', {})
 assert ok and not checked
 
-# 4. 板卡配置加载 + 插件默认值合并
+# 4. 板卡配置加载 + 插件默认值合并(用包内置通用示例验证,不依赖个人环境)
 boards = available_boards()
-assert 'sg2002' in boards, boards
-cfg = load_board('sg2002')
+assert 'example' in boards, boards
+cfg = load_board('example')
 assert 'sender' in cfg['loady'], cfg['loady']          # loady 插件自带 DEFAULTS
 assert cfg['tftp']['method'] == 'remote', cfg['tftp']
-assert cfg['power']['method'] == 'mijia', cfg['power']
+assert cfg['power'].get('method') == 'command', cfg['power']
+assert cfg['run']['hello']['reset_before'] is True     # 示例即全自动开关机
 
-# 5. run 目标引用的文件真实存在(相对项目根解析)
+# 5. run 目标引用的文件真实存在(示例模板的占位路径除外)
 for name, t in cfg['run'].items():
     path = t['file']
     if not os.path.isabs(path):
         path = os.path.join(BASE_DIR, path)
-    assert os.path.isfile(path), f'run.{name} 文件缺失: {path}'
+    assert os.path.isfile(path) or cfg['name'] == 'example', \
+        f'run.{name} 文件缺失: {path}'
 
 # 6. 电源语义层导入无误
 from boardctl import power  # noqa: E402,F401

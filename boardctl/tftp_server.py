@@ -2,7 +2,7 @@
 """迷你 TFTP 服务器:只处理读请求(RRQ),octet 模式,支持 blksize/tsize 选项协商。
 
 用法: python3 tftp_server.py [根目录]   # 默认 tftpboot
-设计目标: 让 SG2002 设备从本机(伪装 192.168.1.17)拉取启动文件。
+设计目标: 让设备从本机 TFTP 拉取启动文件(tftp 插件 method=local 的后端)。
 """
 import os
 import socket

@@ -1,10 +1,11 @@
 """命令行入口:极简命令面——run(一键全流程)+ ls(列表)"""
 import argparse
+import os
 import signal
 import sys
 
 from . import power
-from .config import available_boards, load_board
+from .config import BUNDLED_BOARDS_DIR, available_boards, load_board
 from .runner import do_run
 
 
@@ -48,7 +49,8 @@ def main():
         prog='boardctl',
         description='开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),'
                     '板卡与启动目标配置见 ~/.config/boardctl/boards,插件化传输/执行/电源')
-    ap.add_argument('-b', '--board', default='sg2002', help='开发板名(板卡 TOML 文件名,不含扩展名)')
+    ap.add_argument('-b', '--board', default=None,
+                    help='开发板名(缺省:仅一块用户板卡时自动选中)')
     sub = ap.add_subparsers(dest='op', required=True)
 
     p_run = sub.add_parser('run', help='一键全流程启动(目标配置于 [run.<名字>])')
@@ -70,6 +72,16 @@ def main():
             print(f'{cfg["name"]}{desc}')
         return
 
-    cfg = load_board(args.board)
+    cfg = None
     if args.op == 'run':
+        if args.board is None:
+            # 自动选中唯一的一块用户板(包内置示例不算)
+            user_boards = {n: p for n, p in available_boards().items()
+                           if not p.startswith(BUNDLED_BOARDS_DIR + os.sep)}
+            if len(user_boards) == 1:
+                args.board = next(iter(user_boards))
+            else:
+                sys.exit('请用 -b 指定开发板,可用: '
+                         + (' '.join(sorted(user_boards)) or '(无;先在 ~/.config/boardctl/boards/ 放配置)'))
+        cfg = load_board(args.board)
         _run_guarded(cfg, args)
