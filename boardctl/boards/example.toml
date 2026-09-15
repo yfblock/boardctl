@@ -1,0 +1,60 @@
+# 板卡配置模板:复制到 ~/.config/boardctl/boards/<板名>.toml 后按需修改。
+# 所有 IP 使用文档示例网段(RFC 5737),请替换为你的实际环境。
+description = "示例模板(复制到 ~/.config/boardctl/boards/ 并修改)"
+
+ssh_host = ""                      # 命令模式命令的执行位置:空 = 本机;填 ssh 别名则经 ssh 远端执行
+
+[serial]
+url = "socket://192.0.2.10:5000"   # 串口桥 URL(如 ser2net/TCP 透传);也支持本地 ttyUSB0、rfc2217://
+timeout = 0.2
+
+[uboot]
+prompt = "=>"                      # U-Boot 提示符(命令结束的判定依据)
+load_addr = "0x80080000"           # 默认加载地址
+ip_addr = "192.0.2.50"             # 设备自身 IP(静态)
+server_ip = "192.0.2.1"            # TFTP 服务器地址
+ensure_server_ip = false           # 目标 U-Boot 环境易失(无 saveenv)时置 true,连接时自动恢复 serverip
+
+[power]
+method = "command"                 # command(默认)| mijia(需 pip install 'boardctl[mijia]')
+reset_delay = 3                    # 断电到上电的间隔(秒)
+on_cmd = "echo 'power on'"         # 开机命令(替换为真实控制命令,如智能插座/继电器脚本)
+off_cmd = "echo 'power off'"
+# status_cmd = "..."               # 可选:查询电源状态
+
+# 米家智能插座方式(原生小米云,凭证复用 mijiaAPI CLI 登录态):
+# [power.mijia]
+# dev_name = "plug-name"           # 或 did = "123456"
+
+[tftp]
+method = "remote"                  # remote: scp 到远端 tftp 服务器 | local: 本机临时拉起内置服务器
+ssh_host = "tftp-server"           # method=remote 时的 ssh 别名(~/.ssh/config)
+remote_dir = "/srv/tftp"
+local_dir = "tftpboot"             # method=local 时的根目录
+
+[loady]
+sender = ""                        # Ymodem 发送器;空则自动查找(Arch: lrzsz-sb,Debian/Ubuntu: sb)
+
+[run.hello]
+desc = "示例:裸机程序(go 跳转)"
+file = "hello.bin"                 # 占位路径,替换为你的固件(相对项目根或绝对路径)
+addr = "0x80080000"                # 加载地址(缺省取 uboot.load_addr)
+# entry = "0x80080000"             # 跳转地址(缺省 = addr;加载与入口不同时分别指定)
+exec = "go"                        # go / source / booti / bootm / none(只加载)
+method = "tftp"                    # tftp / loady
+timeout = 10                       # 执行后收集输出的秒数
+reset_before = true                # 自动开机:关→开→等提示符(不依赖设备初始状态)
+after = "off"                      # 收尾:off 断电 / reset 回提示符 / none 保持
+expect = ["BM-TEST-START"]         # 输出断言(子串);expect_re 正则版;fail_re 禁止命中
+# fail_re = ["panic"]
+
+# 引导 Linux 内核示例(booti:file=Image,fdt 必需,initrd 可选):
+# [run.kernel]
+# file = "Image"
+# exec = "booti"
+# fdt = "0x83000000"
+# initrd = "0x82000000"
+# reset_before = true
+# after = "off"
+# expect_re = ["Starting kernel"]
+# fail_re = ["panic", "ERROR:"]

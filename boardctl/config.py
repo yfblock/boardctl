@@ -7,6 +7,9 @@ from pathlib import Path
 # 项目根目录(本包的上一级):开发运行时 boards/、run.sh 等在这里
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# 随包分发的示例板卡目录(仅作模板兜底,优先级最低)
+BUNDLED_BOARDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'boards')
+
 # 全局默认值(仅真正跨模块的段;插件自己的默认值由插件模块的 DEFAULTS 提供)
 DEFAULTS = {
     'serial': {'url': 'socket://localhost:5000', 'timeout': 0.2},
@@ -28,7 +31,7 @@ def boards_dirs():
     candidates = [
         os.environ.get('BOARDCTL_BOARDS'),
         str(Path.home() / '.config' / 'boardctl' / 'boards'),
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'boards'),
+        BUNDLED_BOARDS_DIR,
     ]
     seen, out = set(), []
     for d in candidates:
