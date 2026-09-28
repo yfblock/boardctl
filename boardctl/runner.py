@@ -112,62 +112,71 @@ def evaluate(out, t):
 
 def _execute_target(cfg, name, t):
     """执行单轮:冷启动 -> 传输 -> 执行 -> 断言 -> 收尾。
-    返回 (expect 判定 bool, 结束原因);未配置断言时 bool 恒 True;基础设施错误直接退出。"""
-    if t.get('reset_before'):
-        print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
-        power.power_cycle_and_wait(cfg)
+    收尾(after)放 finally:传输失败、插件 sys.exit、异常退出同样执行
+    (after=none 语义不变:保持现状);返回 (expect 判定 bool, 结束原因);
+    未配置断言时 bool 恒 True;基础设施错误直接退出。"""
+    def _finish():
+        # 收尾:off 断电 | reset 重启回提示符 | none 保持现状(兼容旧的 reset_after 布尔)
+        after = t.get('after', 'reset' if t.get('reset_after') else 'none')
+        try:
+            if after == 'off':
+                print(f'[{name}] 断电收尾(after=off)', flush=True)
+                power.power_off(cfg)
+                print(f'[{name}] 已断电', flush=True)
+            elif after == 'reset':
+                print(f'[{name}] 输出结束,重启回提示符(after=reset)', flush=True)
+                power.do_reset(cfg)
+        except Exception as e:   # 收尾失败不掩盖执行阶段的原始异常
+            print(f'[{name}] 收尾(after={after})失败: {e}', file=sys.stderr, flush=True)
 
-    path = t['file']
-    if not os.path.isabs(path):
-        path = os.path.join(BASE_DIR, path)
-    if not os.path.isfile(path):
-        sys.exit(f'文件不存在: {path}(先构建?)')
-    addr = t.get('addr', cfg['uboot']['load_addr'])   # 加载地址
-    entry = t.get('entry', addr)                      # 跳转/执行地址,默认与加载地址相同
-    method = t.get('method', 'tftp')
-    transport = TRANSPORT.get(method)
-    if transport is None:
-        sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
+    try:
+        if t.get('reset_before'):
+            print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
+            power.power_cycle_and_wait(cfg)
 
-    print(f'[{name}] 传输 {t["file"]} ({method}) -> {addr}', flush=True)
-    if not transport.send(cfg, path, addr):
-        sys.exit(1)
+        path = t['file']
+        if not os.path.isabs(path):
+            path = os.path.join(BASE_DIR, path)
+        if not os.path.isfile(path):
+            sys.exit(f'文件不存在: {path}(先构建?)')
+        addr = t.get('addr', cfg['uboot']['load_addr'])   # 加载地址
+        entry = t.get('entry', addr)                      # 跳转/执行地址,默认与加载地址相同
+        method = t.get('method', 'tftp')
+        transport = TRANSPORT.get(method)
+        if transport is None:
+            sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
 
-    exec_mode = t.get('exec', 'none')
-    executor = EXECUTORS.get(exec_mode)
-    if executor is None:
-        sys.exit(f'未知 exec 方式: {exec_mode}(可用: {" ".join(sorted(EXECUTORS))})')
-    cmdline = executor.build_cmd(entry, t)
-    if cmdline is None:
-        print(f'[{name}] 已加载到 {addr}(exec={exec_mode},未执行)')
-        return True, 'loaded'
+        print(f'[{name}] 传输 {t["file"]} ({method}) -> {addr}', flush=True)
+        if not transport.send(cfg, path, addr):
+            sys.exit(1)
 
-    timeout = float(t.get('timeout', 15))
-    interactive = bool(t.get('interactive'))
-    print(f'[{name}] 执行: {cmdline}', flush=True)
-    with UbootSession(cfg) as s:
-        ok, _ = s.wait_prompt()
-        if not ok:
-            sys.exit('等待 U-Boot 提示符超时')
-        out, ended = _stream_run(s.ser, cmdline, cfg['uboot']['prompt'],
-                                 t, interactive, timeout)
-    print(f'[{name}] 执行结束({ended})', flush=True)
+        exec_mode = t.get('exec', 'none')
+        executor = EXECUTORS.get(exec_mode)
+        if executor is None:
+            sys.exit(f'未知 exec 方式: {exec_mode}(可用: {" ".join(sorted(EXECUTORS))})')
+        cmdline = executor.build_cmd(entry, t)
+        if cmdline is None:
+            print(f'[{name}] 已加载到 {addr}(exec={exec_mode},未执行)')
+            return True, 'loaded'
 
-    ok, detail, checked = evaluate(out, t)
-    if checked:
-        print(f'[{name}] 结果: {"PASS" if ok else "FAIL"}' + (f'({detail})' if detail else ''),
-              flush=True)
+        timeout = float(t.get('timeout', 15))
+        interactive = bool(t.get('interactive'))
+        print(f'[{name}] 执行: {cmdline}', flush=True)
+        with UbootSession(cfg) as s:
+            ok, _ = s.wait_prompt()
+            if not ok:
+                sys.exit('等待 U-Boot 提示符超时')
+            out, ended = _stream_run(s.ser, cmdline, cfg['uboot']['prompt'],
+                                     t, interactive, timeout)
+        print(f'[{name}] 执行结束({ended})', flush=True)
 
-    # 收尾:off 断电 | reset 重启回提示符 | none 保持现状(兼容旧的 reset_after 布尔)
-    after = t.get('after', 'reset' if t.get('reset_after') else 'none')
-    if after == 'off':
-        print(f'[{name}] 断电收尾(after=off)', flush=True)
-        power.power_off(cfg)
-        print(f'[{name}] 已断电', flush=True)
-    elif after == 'reset':
-        print(f'[{name}] 输出结束,重启回提示符(after=reset)', flush=True)
-        power.do_reset(cfg)
-    return (ok if checked else True), ended
+        ok, detail, checked = evaluate(out, t)
+        if checked:
+            print(f'[{name}] 结果: {"PASS" if ok else "FAIL"}' + (f'({detail})' if detail else ''),
+                  flush=True)
+        return (ok if checked else True), ended
+    finally:
+        _finish()
 
 
 def do_run(cfg, name, repeat=1):

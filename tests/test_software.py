@@ -106,4 +106,49 @@ assert ended == 'timeout' and 'kernel booting' in out, (ended, out)
 # 7. 电源语义层导入无误
 from boardctl import power  # noqa: E402,F401
 
+# 8. tftp local 落盘:非 root 下 UDP 69 被 tftpd 占用时应"只落文件"而非要 sudo;
+#    文件已在服务器根目录时不自拷贝(SameFileError 回归);privileged 仍退出
+import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from boardctl.plugins.transport import tftp as _tftp  # noqa: E402
+
+with tempfile.TemporaryDirectory() as td:
+    # 8.1 /proc/net/udp 解析:端口按十六进制匹配
+    fake = Path(td) / 'fakeudp'
+    fake.write_text('  Sl  local_address            remote_address\n'
+                    '   0: 0100007F:0045 00000000:0000 07 00000000:00000000\n'
+                    '   1: 00000000:1F90 00000000:0000 07 00000000:00000000\n')
+    assert len(_tftp._port_listeners(69, files=(str(fake),))) == 1     # 0x0045
+    assert len(_tftp._port_listeners(8080, files=(str(fake),))) == 1   # 0x1F90
+    assert _tftp._port_listeners(12345, files=(str(fake),)) == []
+    assert _tftp._port_listeners(69, files=()) == []
+
+    # 8.2 occupied + 文件已在 tftp 根目录:不复制不退出;异地文件:复制到位
+    root = Path(td) / 'srv'
+    root.mkdir()
+    (root / 'hello.bin').write_bytes(b'BM-TEST')
+    outside = Path(td) / 'elsewhere.bin'
+    outside.write_bytes(b'OTHER')
+    cfg_t = {'tftp': {'method': 'local', 'local_dir': str(root)}}
+    _orig_state = _tftp.udp69_state
+    _tftp.udp69_state = lambda: 'occupied'
+    try:
+        _tftp._stage_file(cfg_t, str(root / 'hello.bin'))    # 原地:不抛 SameFileError
+        assert (root / 'hello.bin').read_bytes() == b'BM-TEST'
+        _tftp._stage_file(cfg_t, str(outside))                # 异地:落盘进 tftp 根
+        assert (root / 'elsewhere.bin').read_bytes() == b'OTHER'
+    finally:
+        _tftp.udp69_state = _orig_state
+
+    # 8.3 端口空闲且无特权(要自建服务器):仍按原样退出并给出指引
+    _tftp.udp69_state = lambda: 'privileged'
+    try:
+        _tftp._stage_file(cfg_t, str(root / 'hello.bin'))
+        raise AssertionError('privileged 应 sys.exit 退出')
+    except SystemExit:
+        pass
+    finally:
+        _tftp.udp69_state = _orig_state
+
 print('software tests: OK')
