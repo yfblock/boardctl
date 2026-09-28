@@ -49,16 +49,19 @@ def _fail_hit(t, buf):
 
 def _stream_run(ser, cmdline, prompt, t, interactive, timeout):
     """流式执行一条 U-Boot 命令:输出实时打印,结束条件取最先者——
-    提示符重现(prompt)/ fail_re 命中(fail,即时止损)/
-    正向断言全部命中(matched,非交互)/ 超时(timeout)/
-    用户退出(user,Ctrl-\\;仅交互模式)。
-    同批输出正负断言双命中时 fail 优先(判负优先于判正)。
-    interactive 且 stdin 为 TTY 时进入交互:stdin 原样转发到设备、不限时
-    (适合 go/booti 进入内核后继续操作)。返回 (累计输出, 结束原因)。"""
+    提示符重现(prompt)/ fail_re 命中(fail)/ 正向断言全部命中(matched,
+    非交互)/ 超时(timeout)/ 用户退出(user,Ctrl-\\;仅交互模式)。
+    fail_re 命中后不立即收工:再继续收集 fail_linger 秒(默认 2,可配 0)
+    让错误信息/栈输出完整,然后判 FAIL 走收尾;同批输出正负断言双命中时
+    判负优先。interactive 且 stdin 为 TTY 时进入交互:stdin 原样转发到
+    设备、不限时(适合 go/booti 进入内核后继续操作)。
+    返回 (累计输出, 结束原因)。"""
     decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
     ser.write(cmdline.encode() + b'\r')
     buf = ''
     deadline = time.monotonic() + timeout if not (interactive and sys.stdin.isatty()) else None
+    fail_deadline = None
+    linger = max(0.0, float(t.get('fail_linger', 2)))   # fail 命中后的续收秒数
 
     raw = False
     if deadline is None:  # 交互模式:raw 终端 + Ctrl-\ 退出
@@ -77,14 +80,13 @@ def _stream_run(ser, cmdline, prompt, t, interactive, timeout):
                 print(text, end='', flush=True)
                 buf += text
 
+            if fail_deadline is not None:   # 止损续收窗口:只收输出,不再判定
+                if time.monotonic() >= fail_deadline:
+                    return buf, 'fail'
+                continue
+
             if prompt and prompt in buf[-256:]:
                 return buf, 'prompt'
-            if not raw:
-                if _fail_hit(t, buf):
-                    return buf, 'fail'
-                if _positives_satisfied(t, buf):
-                    return buf, 'matched'
-
             if raw:
                 r, _, _ = select.select([sys.stdin], [], [], 0)
                 if r:
@@ -92,8 +94,15 @@ def _stream_run(ser, cmdline, prompt, t, interactive, timeout):
                     if not b or QUIT_BYTE in b:
                         return buf, 'user'
                     ser.write(b)   # 原样转发(含 Ctrl-C,交给设备处理)
-            elif deadline is not None and time.monotonic() > deadline:
-                return buf, 'timeout'
+            else:
+                if _fail_hit(t, buf):
+                    if linger <= 0:
+                        return buf, 'fail'
+                    fail_deadline = time.monotonic() + linger
+                elif _positives_satisfied(t, buf):
+                    return buf, 'matched'
+                elif deadline is not None and time.monotonic() > deadline:
+                    return buf, 'timeout'
     finally:
         if raw:
             import termios

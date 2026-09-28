@@ -53,7 +53,8 @@ boardctl -b myboard run hello -r 10   # 10 轮压测,汇总 N/10 PASS
 | | `fdt` / `initrd` | booti 执行插件附加键:设备树地址(必需)/ initrd 地址(可选) |
 | | `reset_before` | 开头自动开机:关→开→等提示符(不依赖设备初始状态) |
 | | `after = off/reset/none` | 收尾动作(断电 / 重启回提示符 / 保持) |
-| | `expect` / `expect_re` / `fail_re` | 输出断言:子串 / 正则须命中 / 正则禁止命中;全命中才 PASS,退出码 0/1。**fail_re 流式中一命中立即收工判 FAIL**(panic 止损,不等 timeout;正则区分大小写,Linux `Kernel panic` 与 Rust `panicked` 需分别覆盖或用 `(?i)`) |
+| | `expect` / `expect_re` / `fail_re` | 输出断言:子串 / 正则须命中 / 正则禁止命中;全命中才 PASS,退出码 0/1。**fail_re 流式一命中即判负**(正则区分大小写,Linux `Kernel panic` 与 Rust `panicked` 需分别覆盖或用 `(?i)`) |
+| | `fail_linger` | fail_re 命中后继续收集输出的秒数(默认 2)——让错误信息/栈吐完整再收工断电;0 = 立即收 |
 
 ## 架构(松耦合,单向依赖)
 

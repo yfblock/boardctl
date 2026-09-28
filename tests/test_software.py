@@ -103,12 +103,18 @@ assert ended == 'timeout', ended
 out, ended = _stream(_FakeSer([b'kernel booting...']), {}, timeout=0.3)
 assert ended == 'timeout' and 'kernel booting' in out, (ended, out)
 
-# fail_re 流式即时命中即收(不等 timeout,panic 止损);判负优先于判正
+# fail_re 流式即时命中(判负优先于判正);命中后先续收 fail_linger 秒再收工,
+# 让错误信息/栈输出完整(默认 2s,0 = 立即)
 out, ended = _stream(_FakeSer([b'boot ok\n', b'thread panicked at root.rs:401\n', b'never reached']),
-                     {'expect': ['TEST_RUNNER_DONE'], 'fail_re': ['(?i)panic']})
-assert ended == 'fail' and 'panicked' in out and 'never reached' not in out, (ended, out)
+                     {'expect': ['TEST_RUNNER_DONE'], 'fail_re': ['(?i)panic'], 'fail_linger': 0.3})
+assert ended == 'fail' and 'panicked' in out and 'never reached' in out, (ended, out)
 
-out, ended = _stream(_FakeSer([b'DONE\npanic!\n']), {'expect': ['DONE'], 'fail_re': ['panic']})
+out, ended = _stream(_FakeSer([b'boot ok\n', b'thread panicked at root.rs:401\n', b'never reached']),
+                     {'expect': ['TEST_RUNNER_DONE'], 'fail_re': ['(?i)panic'], 'fail_linger': 0})
+assert ended == 'fail' and 'never reached' not in out, (ended, out)
+
+out, ended = _stream(_FakeSer([b'DONE\npanic!\n']), {'expect': ['DONE'], 'fail_re': ['panic'],
+                                                     'fail_linger': 0})
 assert ended == 'fail', ended
 
 # 7. 电源语义层导入无误
