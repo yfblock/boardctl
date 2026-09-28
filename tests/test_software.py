@@ -106,8 +106,9 @@ assert ended == 'timeout' and 'kernel booting' in out, (ended, out)
 # 7. 电源语义层导入无误
 from boardctl import power  # noqa: E402,F401
 
-# 8. tftp local 落盘:非 root 下 UDP 69 被 tftpd 占用时应"只落文件"而非要 sudo;
-#    文件已在服务器根目录时不自拷贝(SameFileError 回归);privileged 仍退出
+# 8. tftp 文件就位:external 只落文件、不探测不建服务器(已在根目录不自拷贝,
+#    SameFileError 回归);local 自建路径快速失败——被占用指引 external、
+#    无特权指引 sudo(占用判定读 /proc/net/udp,不受特权端口 EACCES 影响)
 import tempfile  # noqa: E402
 from pathlib import Path  # noqa: E402
 
@@ -124,30 +125,29 @@ with tempfile.TemporaryDirectory() as td:
     assert _tftp._port_listeners(12345, files=(str(fake),)) == []
     assert _tftp._port_listeners(69, files=()) == []
 
-    # 8.2 occupied + 文件已在 tftp 根目录:不复制不退出;异地文件:复制到位
+    # 8.2 external:文件已在 tftp 根目录不重复落盘;异地文件复制到位
     root = Path(td) / 'srv'
     root.mkdir()
     (root / 'hello.bin').write_bytes(b'BM-TEST')
     outside = Path(td) / 'elsewhere.bin'
     outside.write_bytes(b'OTHER')
-    cfg_t = {'tftp': {'method': 'local', 'local_dir': str(root)}}
-    _orig_state = _tftp.udp69_state
-    _tftp.udp69_state = lambda: 'occupied'
-    try:
-        _tftp._stage_file(cfg_t, str(root / 'hello.bin'))    # 原地:不抛 SameFileError
-        assert (root / 'hello.bin').read_bytes() == b'BM-TEST'
-        _tftp._stage_file(cfg_t, str(outside))                # 异地:落盘进 tftp 根
-        assert (root / 'elsewhere.bin').read_bytes() == b'OTHER'
-    finally:
-        _tftp.udp69_state = _orig_state
+    cfg_x = {'tftp': {'method': 'external', 'local_dir': str(root)}}
+    _tftp._stage_file(cfg_x, str(root / 'hello.bin'))     # 原地:不抛 SameFileError
+    assert (root / 'hello.bin').read_bytes() == b'BM-TEST'
+    _tftp._stage_file(cfg_x, str(outside))                # 异地:落盘进 tftp 根
+    assert (root / 'elsewhere.bin').read_bytes() == b'OTHER'
 
-    # 8.3 端口空闲且无特权(要自建服务器):仍按原样退出并给出指引
-    _tftp.udp69_state = lambda: 'privileged'
+    # 8.3 local 自建:occupied → 指引 external;privileged → 指引 sudo
+    _orig_state = _tftp.udp69_state
+    cfg_l = {'tftp': {'method': 'local', 'local_dir': str(root)}}
     try:
-        _tftp._stage_file(cfg_t, str(root / 'hello.bin'))
-        raise AssertionError('privileged 应 sys.exit 退出')
-    except SystemExit:
-        pass
+        for state, hint in (('occupied', 'external'), ('privileged', 'sudo')):
+            _tftp.udp69_state = lambda s=state: s
+            try:
+                _tftp._stage_file(cfg_l, str(root / 'hello.bin'))
+                raise AssertionError(f'{state} 应 sys.exit 退出')
+            except SystemExit as e:
+                assert hint in str(e), (state, e)
     finally:
         _tftp.udp69_state = _orig_state
 

@@ -2,13 +2,15 @@
 
 ## 0.6.1 - 2026-09-29
 
-- **修复 tftp `method=local` 在非 root 下必然误报"UDP 69 需要特权"**:
-  占用判定改为优先读 `/proc/net/udp`(无特权可见)。此前用试绑分类,
-  而内核对特权端口先查 CAP_NET_BIND_SERVICE 再查端口占用——非 root
-  试绑永远 EACCES,即使 69 早被常驻 tftpd(如 tftpd-hpa)占着,
-  "已占用→只落文件"分支对非 root 不可达。现在常驻 tftpd 场景直接
-  落文件供拉取,无需 sudo
-- `local` 落盘:文件已在 `local_dir` 时不再自拷贝(原会 `SameFileError`)
+- **tftp `method` 拆分:显式声明,不再猜测**(`local` 原先一个方法混装两种语义,
+  依端口探测猜意图,是非 root 误报问题的根源)
+  - 新增 `method = "external"`:本机已有常驻 tftpd(如 tftpd-hpa)服务
+    UDP 69 时,只把文件放进其根目录——**不探测端口、不建服务器、免特权**;
+    文件已在 `local_dir` 不重复落盘(修自拷贝 `SameFileError`)
+  - `method = "local"` 收窄为"boardctl 自建临时 TFTP 服务器":探测仅为
+    快速失败并给出替代——69 被占用提示改 `external`,空闲但无特权提示
+    `sudo`/`external`/`loady`(占用判定读 `/proc/net/udp`:非 root 试绑
+    特权端口永远 EACCES,内核先查权限再查占用,原探测无法区分)
 - **run 收尾兜底**:`after` 移入 `finally`——传输失败、插件 `sys.exit`、
   `exec=none` 早退等任何退出路径都会执行收尾(`after=off` 时失败也断电,
   修复"冷启动后传输报错、板子留在开机状态");收尾自身异常只报告,

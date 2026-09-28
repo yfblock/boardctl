@@ -1,6 +1,8 @@
-"""tftp 传输插件:设备端 tftpboot 拉取。文件就位方式由 [tftp].method 决定:
-remote = scp 到远端 tftp 服务器(如 tftpd-hpa);
-local  = 本机临时拉起 tftp_server.py(UDP 69 需要特权)。
+"""tftp 传输插件:设备端 tftpboot 拉取。文件就位方式由 [tftp].method 显式声明:
+remote   = scp 到远端 tftp 服务器;
+external = 本机已有常驻 tftpd(如 tftpd-hpa)服务 UDP 69,只把文件放进其
+           根目录即可——不探测端口、不建服务器、免特权;
+local    = boardctl 自建临时 tftp_server.py(UDP 69 需特权,退出自动回收)。
 """
 import atexit
 import os
@@ -44,10 +46,9 @@ def _port_listeners(port, files=('/proc/net/udp', '/proc/net/udp6')):
 
 
 def udp69_state():
-    """探测本机 UDP 69:free / privileged / occupied。
-    占用判定优先走 /proc/net/udp:非 root 试绑特权端口只会得到 EACCES
-    (内核先查 CAP_NET_BIND_SERVICE 再查端口冲突),即使端口早被 tftpd
-    占着也分类不出 occupied——不能只靠 bind。"""
+    """探测本机 UDP 69 能否自建服务器:free / privileged / occupied。
+    占用判定优先读 /proc/net/udp:非 root 试绑特权端口只会得到 EACCES
+    (内核先查 CAP_NET_BIND_SERVICE 再查端口冲突),区分不出被占用。"""
     if _port_listeners(69):
         return 'occupied'
     t = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -60,6 +61,15 @@ def udp69_state():
     finally:
         t.close()
     return 'free'
+
+
+def _drop_into(local_dir, path, fname):
+    """文件放进 tftp 根目录;已在目标位置则跳过(避免自拷贝)"""
+    dst = os.path.join(local_dir, fname)
+    if os.path.realpath(path) == os.path.realpath(dst):
+        return
+    os.makedirs(local_dir, exist_ok=True)
+    shutil.copy(path, dst)
 
 
 def _stage_file(cfg, path):
@@ -78,29 +88,36 @@ def _stage_file(cfg, path):
             sys.exit(f'scp 到 {ssh}:{rdir} 失败——多半是目录权限。\n'
                      f'一次性修复: ssh -t {ssh} "sudo chown $USER {rdir}"\n'
                      '或该目标 method = "loady"(免权限,速度较慢)')
-    elif method == 'local':
-        state = udp69_state()
-        if state == 'privileged':
-            sys.exit('本机 UDP 69 空闲,但 boardctl 自建 TFTP 服务器需要特权:\n'
-                     '先 `sudo -v`(凭证缓存约 15 分钟)再以 sudo 运行;\n'
-                     '或常驻一个 tftpd 占用 69(如 tftpd-hpa,本方法会自动识别),\n'
-                     '或该目标 method = "loady"(免权限,串口传输)')
+    elif method == 'external':
+        # 常驻 tftpd 已在本机服务 UDP 69:boardctl 只落文件,服务器是否在跑
+        # 由声明者负责——探测端口属于猜测意图,不猜(仅提醒一句疑似没在跑)
         local_dir = os.path.abspath(t.get('local_dir', 'tftpboot'))
-        dst = os.path.join(local_dir, fname)
-        if os.path.realpath(path) != os.path.realpath(dst):   # 已在服务器根目录则不重复落盘
-            os.makedirs(local_dir, exist_ok=True)
-            shutil.copy(path, dst)
-        if state == 'free':
-            # 临时拉起内置 TFTP 服务器,退出时一并回收
-            srv = subprocess.Popen(
-                [sys.executable, _TFTP_SERVER, local_dir],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            atexit.register(lambda: srv.poll() is None and srv.terminate())
-            time.sleep(0.5)
-        else:
-            print(f'注意: UDP 69 已被常驻 tftpd 占用——若其根目录不是 {local_dir},拉取会失败')
+        _drop_into(local_dir, path, fname)
+        if os.path.exists('/proc/net/udp') and not _port_listeners(69):
+            print('警告: 本机未见 UDP 69 监听——常驻 tftpd 好像没在运行,设备拉取大概率失败',
+                  file=sys.stderr, flush=True)
+    elif method == 'local':
+        # boardctl 自建临时 TFTP 服务器;探测只为快速失败,给出明确替代方案
+        state = udp69_state()
+        if state == 'occupied':
+            sys.exit('UDP 69 已被其他进程占用(常驻 tftpd?)。\n'
+                     '若它就是你的 TFTP 服务器,改 tftp.method = "external"'
+                     '(只落文件,免特权、不探测);\n'
+                     '若要 boardctl 自建服务器,先停掉占用者再试')
+        if state == 'privileged':
+            sys.exit('UDP 69 空闲,但 boardctl 自建 TFTP 服务器需要特权:\n'
+                     '先 `sudo -v`(凭证缓存约 15 分钟)再以 sudo 运行;\n'
+                     '或常驻一个 tftpd 改用 method = "external",或该目标 method = "loady"')
+        local_dir = os.path.abspath(t.get('local_dir', 'tftpboot'))
+        _drop_into(local_dir, path, fname)
+        # 临时拉起内置 TFTP 服务器,退出时一并回收
+        srv = subprocess.Popen(
+            [sys.executable, _TFTP_SERVER, local_dir],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        atexit.register(lambda: srv.poll() is None and srv.terminate())
+        time.sleep(0.5)
     else:
-        sys.exit(f'未知 tftp.method: {method}')
+        sys.exit(f'未知 tftp.method: {method}(可用: remote / external / local)')
 
 
 def send(cfg, path, addr):

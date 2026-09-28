@@ -45,7 +45,8 @@ boardctl -b myboard run hello -r 10   # 10 轮压测,汇总 N/10 PASS
 | `[power]` | `method = "mijia"` + `[power.mijia]` dev_name/did | 电源插件:原生小米云(凭证复用 `mijiaAPI` CLI 登录态,首次需 `mijiaAPI login` 扫码),不走 ssh_host |
 | | `method = "command"` + `on_cmd`/`off_cmd`/`status_cmd` | 命令插件:任意开关机 shell 命令(经 ssh_host 决定本机/远端);method 未配置时默认即此 |
 | `[tftp]` | `method=remote` + `ssh_host`/`remote_dir` | scp 到远端 tftpd 服务器 |
-| | `method=local` + `local_dir` | 本机供拉取:UDP 69 空闲则临时拉起内置 TFTP 服务器(需特权,退出自动回收);**已被常驻 tftpd(如 tftpd-hpa)占用则自动识别,只落文件由其供拉取(无需特权)**,文件已在 `local_dir` 时不重复落盘 |
+| | `method=external` + `local_dir` | **本机已有常驻 tftpd(如 tftpd-hpa)服务 UDP 69**:只把文件放进其根目录即可——不探测端口、不建服务器、免特权 |
+| | `method=local` + `local_dir` | boardctl 自建临时 TFTP 服务器(UDP 69 需特权,退出自动回收;69 被占/无特权时快速失败并提示改 external/loady) |
 | `[loady]` | `sender` | Ymodem 发送器(空则自动查找:Arch 为 `lrzsz-sb`,Debian/Ubuntu 为 `sb`) |
 | `[run.<名字>]` | `file` / `exec` / `method` / `timeout` | 启动目标(exec/method 即插件名) |
 | | `addr` / `entry` | 加载地址 / 跳转执行地址;缺省都取 `uboot.load_addr`,加载与入口不同时分别指定 |
