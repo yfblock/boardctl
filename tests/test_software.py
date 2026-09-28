@@ -103,6 +103,14 @@ assert ended == 'timeout', ended
 out, ended = _stream(_FakeSer([b'kernel booting...']), {}, timeout=0.3)
 assert ended == 'timeout' and 'kernel booting' in out, (ended, out)
 
+# fail_re 流式即时命中即收(不等 timeout,panic 止损);判负优先于判正
+out, ended = _stream(_FakeSer([b'boot ok\n', b'thread panicked at root.rs:401\n', b'never reached']),
+                     {'expect': ['TEST_RUNNER_DONE'], 'fail_re': ['(?i)panic']})
+assert ended == 'fail' and 'panicked' in out and 'never reached' not in out, (ended, out)
+
+out, ended = _stream(_FakeSer([b'DONE\npanic!\n']), {'expect': ['DONE'], 'fail_re': ['panic']})
+assert ended == 'fail', ended
+
 # 7. 电源语义层导入无误
 from boardctl import power  # noqa: E402,F401
 

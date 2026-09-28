@@ -38,10 +38,21 @@ def _positives_satisfied(t, buf):
     return True
 
 
+def _fail_hit(t, buf):
+    """负向断言 fail_re 是否命中(流式即时判负:一命中就收工,
+    不等 timeout——panic 类故障立刻断电止损);明细由 evaluate 统一给出"""
+    for p in _as_list(t.get('fail_re')):
+        if re.search(p, buf):
+            return True
+    return False
+
+
 def _stream_run(ser, cmdline, prompt, t, interactive, timeout):
     """流式执行一条 U-Boot 命令:输出实时打印,结束条件取最先者——
-    提示符重现(prompt)/ 正向断言全部命中(matched,非交互)/ 超时(timeout)/
+    提示符重现(prompt)/ fail_re 命中(fail,即时止损)/
+    正向断言全部命中(matched,非交互)/ 超时(timeout)/
     用户退出(user,Ctrl-\\;仅交互模式)。
+    同批输出正负断言双命中时 fail 优先(判负优先于判正)。
     interactive 且 stdin 为 TTY 时进入交互:stdin 原样转发到设备、不限时
     (适合 go/booti 进入内核后继续操作)。返回 (累计输出, 结束原因)。"""
     decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
@@ -68,8 +79,11 @@ def _stream_run(ser, cmdline, prompt, t, interactive, timeout):
 
             if prompt and prompt in buf[-256:]:
                 return buf, 'prompt'
-            if not raw and _positives_satisfied(t, buf):
-                return buf, 'matched'
+            if not raw:
+                if _fail_hit(t, buf):
+                    return buf, 'fail'
+                if _positives_satisfied(t, buf):
+                    return buf, 'matched'
 
             if raw:
                 r, _, _ = select.select([sys.stdin], [], [], 0)
