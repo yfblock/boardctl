@@ -1,4 +1,4 @@
-"""板卡配置加载:boards/*.toml + 默认值合并(TOML 同名键覆盖)"""
+"""板卡配置加载:board_dir(~/.config/boardctl)下的 *.toml + 默认值合并(TOML 同名键覆盖)"""
 import os
 import sys
 import tomllib
@@ -25,12 +25,12 @@ DEFAULTS = {
 
 def boards_dirs():
     """板卡配置目录搜索顺序(去重,仅保留存在的):
-    $BOARDCTL_BOARDS → ~/.config/boardctl/boards(用户配置,唯一推荐位置)→ 包内置示例
+    $BOARDCTL_BOARDS → ~/.config/boardctl(用户配置,唯一推荐位置)→ 包内置示例
     本地/项目文件夹不参与解析。
     """
     candidates = [
         os.environ.get('BOARDCTL_BOARDS'),
-        str(Path.home() / '.config' / 'boardctl' / 'boards'),
+        str(Path.home() / '.config' / 'boardctl'),
         BUNDLED_BOARDS_DIR,
     ]
     seen, out = set(), []
@@ -56,7 +56,7 @@ def available_boards():
 def load_board(name):
     boards = available_boards()
     if name not in boards:
-        sys.exit(f"未知开发板 {name!r},可用: {' '.join(sorted(boards)) or '(没有任何 boards/ 目录里有配置)'}")
+        sys.exit(f"未知开发板 {name!r},可用: {' '.join(sorted(boards)) or '(配置目录里没有任何板卡)'}")
     with open(boards[name], 'rb') as f:
         data = tomllib.load(f)
     cfg = {'name': name, 'description': data.get('description', ''),

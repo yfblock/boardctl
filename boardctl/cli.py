@@ -65,7 +65,7 @@ def _pick_board(board):
             board = next(iter(user_boards))
         else:
             sys.exit('请用 -b 指定开发板,可用: '
-                     + (' '.join(sorted(user_boards)) or '(无;先在 ~/.config/boardctl/boards/ 放配置)'))
+                     + (' '.join(sorted(user_boards)) or '(无;先在 ~/.config/boardctl/ 放配置)'))
     return load_board(board)
 
 
@@ -77,7 +77,7 @@ def _launch(
                                help='开发板名(缺省:仅一块用户板卡时自动选中)')] = None,
 ):
     """开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),
-    板卡与启动目标配置见 ~/.config/boardctl/boards,插件化传输/执行/电源"""
+    板卡与启动目标配置见 ~/.config/boardctl,插件化传输/执行/电源"""
     command, bound, ignored = app.parse_args(tokens)
     extra = {}
     if 'cfg' in ignored:                 # 仅声明了 cfg 的子命令才解析板卡(ls 不需要)
@@ -99,7 +99,7 @@ def ls():
     """列出开发板"""
     boards = available_boards()
     if not boards:
-        sys.exit('没有找到任何板卡配置。把板卡 TOML 放到 ~/.config/boardctl/boards/\n'
+        sys.exit('没有找到任何板卡配置。把板卡 TOML 放到 ~/.config/boardctl/\n'
                  '(模板可参考包内置示例 boardctl/boards/),或用 $BOARDCTL_BOARDS 指定目录')
     for name in sorted(boards):
         cfg = load_board(name)

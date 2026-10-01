@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0 - 2026-10-01
+
+- **板卡配置目录去掉 `boards/` 子目录(不兼容)**:板卡 TOML 直接放
+  `~/.config/boardctl/`(即 board_dir 本身),不再需要 `boards/` 子文件夹;
+  `$BOARDCTL_BOARDS` 环境变量语义不变(指向的目录里直接放 `*.toml`)。
+  从旧版本升级:`mv ~/.config/boardctl/boards/*.toml ~/.config/boardctl/`
+
 ## 0.8.0 - 2026-10-01
 
 - **`power` 子命令**:`boardctl [-b 板名] power on|off|status`——

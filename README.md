@@ -11,7 +11,7 @@ TOML 配置,**模块化 + 插件化**架构——一键全流程(冷启动 → �
   全程零写入——不传输、不发任何命令(连 Ctrl-C 都不发,免得打断),
   静默上电后从第一个字节开始收流,断言与收尾照常
 - 打断保证:Ctrl-C / kill 时若板在开机状态自动关机,程序结束后设备必为关
-- 板卡配置放 `~/.config/boardctl/boards/`,与代码完全解耦
+- 板卡配置放 `~/.config/boardctl/`,与代码完全解耦
 
 ## 安装
 
@@ -24,8 +24,8 @@ pip install 'boardctl[mijia]'    # + 米家智能插座电源插件(原生小米
 
 ```bash
 # 1. 建板卡配置(模板:包内置示例,或仓库 boardctl/boards/example.toml)
-mkdir -p ~/.config/boardctl/boards
-cp <模板> ~/.config/boardctl/boards/myboard.toml   # 改串口地址/电源命令/启动目标
+mkdir -p ~/.config/boardctl
+cp <模板> ~/.config/boardctl/myboard.toml       # 改串口地址/电源命令/启动目标
 
 # 2. 跑起来
 boardctl ls                        # 列出已配置开发板
@@ -37,9 +37,9 @@ boardctl -b myboard power off      # 手动关机(on 同理)
 # 仅一块板时可省略 -b
 ```
 
-## 板卡配置(~/.config/boardctl/boards/*.toml)
+## 板卡配置(~/.config/boardctl/*.toml)
 
-搜索顺序:`$BOARDCTL_BOARDS`(临时覆盖)→ `~/.config/boardctl/boards/` →
+搜索顺序:`$BOARDCTL_BOARDS`(临时覆盖)→ `~/.config/boardctl/` →
 包内置示例(仅作模板兜底);本地/项目文件夹不参与解析。
 
 | 段 | 键 | 说明 |

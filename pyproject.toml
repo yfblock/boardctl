@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "boardctl"
-version = "0.8.0"
+version = "0.9.0"
 description = "开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),插件化传输/执行/电源,板卡配置于 ~/.config/boardctl"
 readme = "README.md"
 license = "MIT"
@@ -23,5 +23,5 @@ boardctl-mcp = "boardctl.mcp_server:main"
 packages = ["boardctl"]
 
 
-# 板卡配置唯一来源是 ~/.config/boardctl/boards(或 $BOARDCTL_BOARDS);
+# 板卡配置唯一来源是 ~/.config/boardctl(或 $BOARDCTL_BOARDS);
 # boardctl/boards/ 只是随包分发的示例模板,最低优先级兜底

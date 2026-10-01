@@ -45,7 +45,7 @@ def _format_round(r):
 @mcp.tool()
 @_tool_guard
 def ls_boards() -> str:
-    """列出已配置的开发板(来自 ~/.config/boardctl/boards/)及各自的启动目标。"""
+    """列出已配置的开发板(来自 ~/.config/boardctl/)及各自的启动目标。"""
     lines = []
     for name in sorted(available_boards()):
         cfg = load_board(name)

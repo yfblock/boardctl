@@ -1,6 +1,6 @@
-# 板卡配置模板:复制到 ~/.config/boardctl/boards/<板名>.toml 后按需修改。
+# 板卡配置模板:复制到 ~/.config/boardctl/<板名>.toml 后按需修改。
 # 所有 IP 使用文档示例网段(RFC 5737),请替换为你的实际环境。
-description = "示例模板(复制到 ~/.config/boardctl/boards/ 并修改)"
+description = "示例模板(复制到 ~/.config/boardctl/ 并修改)"
 
 ssh_host = ""                      # 命令模式命令的执行位置:空 = 本机;填 ssh 别名则经 ssh 远端执行
 

@@ -344,4 +344,19 @@ with contextlib.redirect_stdout(_io2.StringIO()) as _so:
         assert e.code == 0, e.code
 assert 'run' in _so.getvalue(), _so.getvalue()
 
+# 11. 板卡配置目录:board_dir 直接放 *.toml(~/.config/boardctl,无 boards/ 子目录);
+#     $BOARDCTL_BOARDS 指向的目录里直接放 toml 即被发现,加载照常合并默认值
+with tempfile.TemporaryDirectory() as _td:
+    (Path(_td) / 'x.toml').write_text('description = "t"\n[serial]\nurl = "socket://h:1"\n',
+                                      encoding='utf-8')
+    (Path(_td) / 'ignored.txt').write_text('not a board', encoding='utf-8')
+    os.environ['BOARDCTL_BOARDS'] = _td
+    try:
+        assert available_boards() == {'x': str(Path(_td) / 'x.toml')}, available_boards()
+        _c = load_board('x')
+        assert _c['serial']['url'] == 'socket://h:1'
+        assert _c['uboot']['prompt'] == '=>'       # DEFAULTS 照常合并
+    finally:
+        os.environ.pop('BOARDCTL_BOARDS', None)
+
 print('software tests: OK')
