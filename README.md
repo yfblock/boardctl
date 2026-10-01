@@ -6,6 +6,7 @@ TOML 配置,**模块化 + 插件化**架构——一键全流程(冷启动 → �
 
 - `run <目标>`:自动开机 → TFTP/Ymodem 传输 → `go`/`source`/`booti` 执行 →
   输出断言(PASS/FAIL)→ 自动关机;`--repeat N` 多轮压测
+- `power on|off|status`:手动电源控制/查询(经电源插件,run 全流程之外用)
 - 被动观察 `exec = "watch"`:板子自己跑自动流程(bootcmd/板上脚本)时,
   全程零写入——不传输、不发任何命令(连 Ctrl-C 都不发,免得打断),
   静默上电后从第一个字节开始收流,断言与收尾照常
@@ -31,6 +32,8 @@ boardctl ls                        # 列出已配置开发板
 boardctl -b myboard run            # 列出该板的启动目标
 boardctl -b myboard run hello      # 全流程:开机→传输→执行→断言→关机
 boardctl -b myboard run hello -r 10   # 10 轮压测,汇总 N/10 PASS
+boardctl -b myboard power status   # 查电源(开/关)
+boardctl -b myboard power off      # 手动关机(on 同理)
 # 仅一块板时可省略 -b
 ```
 
@@ -46,6 +49,7 @@ boardctl -b myboard run hello -r 10   # 10 轮压测,汇总 N/10 PASS
 | `[uboot]` | `prompt` / `load_addr` | U-Boot 提示符、默认加载地址 |
 | | `server_ip` / `ensure_server_ip` | TFTP 服务器地址;目标 U-Boot 环境易失(无 saveenv)时置 true,连接时自动恢复 |
 | `[power]` | `method = "mijia"` + `[power.mijia]` dev_name/did | 电源插件:原生小米云(凭证复用 `mijiaAPI` CLI 登录态,首次需 `mijiaAPI login` 扫码),不走 ssh_host |
+| | `[power.mijia]` prop | 开关量属性名,默认 `"on"`;部分设备的电源 prop 不是 `on`,按设备属性表改 |
 | | `method = "command"` + `on_cmd`/`off_cmd`/`status_cmd` | 命令插件:任意开关机 shell 命令(经 ssh_host 决定本机/远端);method 未配置时默认即此 |
 | `[tftp]` | `method=remote` + `ssh_host`/`remote_dir` | scp 到远端 tftpd 服务器 |
 | | `method=external` + `local_dir` | **本机已有常驻 tftpd(如 tftpd-hpa)服务 UDP 69**:只把文件放进其根目录即可——不探测端口、不建服务器、免特权 |

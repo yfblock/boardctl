@@ -238,4 +238,49 @@ with tempfile.TemporaryDirectory() as td:
     finally:
         _tftp.udp69_state = _orig_state
 
+# 9. 电源:mijia 开关量属性名可配(默认 on);power 子命令语义(on/off/status 经当前插件)
+from boardctl import power as _power_mod  # noqa: E402
+from boardctl.plugins import POWER as _POWER_REG  # noqa: E402
+from boardctl.plugins.power import mijia as _mijia  # noqa: E402
+
+assert _mijia._prop({'power': {}}) == 'on'                      # 缺省:多数插座
+assert _mijia._prop({'power': {'mijia': {}}}) == 'on'
+assert _mijia._prop({'power': {'mijia': {'prop': 'power'}}}) == 'power'
+
+
+class _FakePowerPlugin:
+    NAME = 'fake'
+    calls = []
+    state = True
+
+    @classmethod
+    def set_power(cls, cfg, on):
+        cls.calls.append(on)
+
+    @classmethod
+    def get_power(cls, cfg):
+        return cls.state
+
+
+_POWER_REG['fake'] = _FakePowerPlugin
+try:
+    _fcfg = {'name': 'fake', 'power': {'method': 'fake'},
+             'serial': {}, 'uboot': {}}
+    for st, want in (('on', True), ('off', False)):
+        try:
+            _power_mod.do_power(_fcfg, st)
+            raise AssertionError('do_power 完成 action 后应 exit(0)')
+        except SystemExit as e:
+            assert e.code == 0, e.code
+        assert _FakePowerPlugin.calls[-1] is want, _FakePowerPlugin.calls
+    _FakePowerPlugin.state = False
+    with contextlib.redirect_stdout(_io2.StringIO()) as _so:
+        try:
+            _power_mod.do_power(_fcfg, 'status')
+        except SystemExit as e:
+            assert e.code == 0, e.code
+    assert _so.getvalue().strip() == '关', _so.getvalue()
+finally:
+    del _POWER_REG['fake']
+
 print('software tests: OK')

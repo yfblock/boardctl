@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0 - 2026-10-01
+
+- **`power` 子命令**:`boardctl [-b 板名] power on|off|status`——
+  直接经电源插件控制/查询电源(run 全流程之外的手动操作);
+  status 对可解析的插件(mijia)打印 开/关,不可解析的(command)原样输出
+- **mijia 插件属性名可配**:部分设备的开关量 prop 不是 `'on'`,
+  新增 `[power.mijia] prop = "..."`(默认仍为 `'on'`,原配置不受影响)
+
 ## 0.7.0 - 2026-10-01
 
 - **被动观察模式 `exec = "watch"`**:板子自己完成传输与执行(U-Boot bootcmd、

@@ -25,6 +25,8 @@ off_cmd = "echo 'power off'"
 # 米家智能插座方式(原生小米云,凭证复用 mijiaAPI CLI 登录态):
 # [power.mijia]
 # dev_name = "plug-name"           # 或 did = "123456"
+# prop = "on"                      # 开关量属性名:多数插座是 on;
+#                                  # 部分设备的电源 prop 不是 on,按设备属性表改
 
 [tftp]
 method = "remote"                  # remote: scp 到远端 tftp 服务器

@@ -2,6 +2,8 @@
 
 凭证复用 mijiaAPI CLI 的登录态(~/.config/mijia-api/auth.json),
 首次使用前需先执行一次 `mijiaAPI login` 扫码。
+开关量属性名默认 'on'(多数插座);部分设备的电源 prop 不是 'on',
+可在 [power.mijia] 里用 prop = "..." 指定。
 """
 import threading
 
@@ -29,9 +31,14 @@ def _device(cfg):
         return _dev_cache[key]
 
 
+def _prop(cfg):
+    """开关量属性名:默认 'on';非 'on' 的设备在 [power.mijia] 配 prop"""
+    return cfg['power'].get('mijia', {}).get('prop', 'on')
+
+
 def set_power(cfg, on):
-    _device(cfg).set('on', bool(on))
+    _device(cfg).set(_prop(cfg), bool(on))
 
 
 def get_power(cfg):
-    return bool(_device(cfg).get('on'))
+    return bool(_device(cfg).get(_prop(cfg)))

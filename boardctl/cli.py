@@ -1,4 +1,4 @@
-"""命令行入口:极简命令面——run(一键全流程)+ ls(列表)"""
+"""命令行入口:极简命令面——run(一键全流程)+ ls(列表)+ power(电源控制)"""
 import argparse
 import os
 import signal
@@ -44,6 +44,19 @@ def _run_guarded(cfg, args):
         signal.signal(signal.SIGTERM, old_term)
 
 
+def _pick_board(args):
+    """解析目标板卡:-b 指定;缺省且仅一块用户板(包内置示例不算)时自动选中"""
+    if args.board is None:
+        user_boards = {n: p for n, p in available_boards().items()
+                       if not p.startswith(BUNDLED_BOARDS_DIR + os.sep)}
+        if len(user_boards) == 1:
+            args.board = next(iter(user_boards))
+        else:
+            sys.exit('请用 -b 指定开发板,可用: '
+                     + (' '.join(sorted(user_boards)) or '(无;先在 ~/.config/boardctl/boards/ 放配置)'))
+    return load_board(args.board)
+
+
 def main():
     ap = argparse.ArgumentParser(
         prog='boardctl',
@@ -60,6 +73,10 @@ def main():
 
     sub.add_parser('ls', help='列出开发板')
 
+    p_power = sub.add_parser('power', help='电源控制(经电源插件:mijia/command)')
+    p_power.add_argument('state', choices=['on', 'off', 'status'],
+                         help='on 开机 / off 关机 / status 查询状态')
+
     args = ap.parse_args()
     if args.op == 'ls':
         boards = available_boards()
@@ -72,16 +89,11 @@ def main():
             print(f'{cfg["name"]}{desc}')
         return
 
-    cfg = None
-    if args.op == 'run':
-        if args.board is None:
-            # 自动选中唯一的一块用户板(包内置示例不算)
-            user_boards = {n: p for n, p in available_boards().items()
-                           if not p.startswith(BUNDLED_BOARDS_DIR + os.sep)}
-            if len(user_boards) == 1:
-                args.board = next(iter(user_boards))
-            else:
-                sys.exit('请用 -b 指定开发板,可用: '
-                         + (' '.join(sorted(user_boards)) or '(无;先在 ~/.config/boardctl/boards/ 放配置)'))
-        cfg = load_board(args.board)
-        _run_guarded(cfg, args)
+    if args.op == 'power':
+        cfg = _pick_board(args)
+        if args.state != 'status':
+            print(f'[{cfg["name"]}] 电源{"开机" if args.state == "on" else "关机"}'
+                  f'({power.method_desc(cfg)})', flush=True)
+        power.do_power(cfg, args.state)   # 内部完成动作并 exit(0)
+    else:
+        _run_guarded(_pick_board(args), args)
