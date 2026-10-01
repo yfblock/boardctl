@@ -68,7 +68,7 @@ boardctl -b myboard power off      # 手动关机(on 同理)
 
 ```
 boardctl/
-├── cli.py        命令行接线(argparse + 分发,无业务逻辑)
+├── cli.py        命令行接线(cyclopts 注解式,无业务逻辑)
 ├── config.py     板卡 TOML 加载(不依赖其他模块)
 ├── session.py    U-Boot 串口会话 ← config
 ├── power.py      电源/冷启动   ← config, session
@@ -113,7 +113,8 @@ uv run python tests/test_software.py      # 纯软件测试(无需硬件)
 
 ## 依赖
 
-Python 3.11+(stdlib `tomllib`)+ pyserial。裸机测试固件交叉构建另需
+Python 3.11+(stdlib `tomllib`)+ pyserial + cyclopts(CLI 解析)。
+裸机测试固件交叉构建另需
 `riscv64-linux-gnu-gcc`、`mkimage`(uboot-tools)、`lrzsz`。
 
 ## License

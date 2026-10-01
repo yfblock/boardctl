@@ -7,6 +7,10 @@
   status 对可解析的插件(mijia)打印 开/关,不可解析的(command)原样输出
 - **mijia 插件属性名可配**:部分设备的开关量 prop 不是 `'on'`,
   新增 `[power.mijia] prop = "..."`(默认仍为 `'on'`,原配置不受影响)
+- **CLI 迁移到 cyclopts**(弃手写 argparse):注解式声明命令与参数,
+  命令面与用法完全不变(`-b 板名` 仍置于子命令前、`run <目标> -r N`、
+  `power on|off|status`、`ls`);全局 `-b` 经 meta 入口解析,板卡配置
+  加载一次注入子命令;新增 `--version`;非法参数的错误提示更友好
 
 ## 0.7.0 - 2026-10-01
 

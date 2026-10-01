@@ -283,4 +283,65 @@ try:
 finally:
     del _POWER_REG['fake']
 
+# 10. CLI 接线(cyclopts):走真实入口 app.meta 分发,叶子打桩
+#     (do_run/板卡目录/do_power),不碰文件系统与硬件
+from boardctl import cli as _cli  # noqa: E402
+
+_runcalls = []
+with _mock.patch.object(_cli, 'do_run',
+                        lambda cfg, name, repeat=1: _runcalls.append((cfg['name'], name, repeat))), \
+        _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/example.toml'}), \
+        _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}):
+    # 全局 -b 前置于子命令 + 位置参数 + 短旗标 -r
+    _cli.app.meta(['-b', 'example', 'run', 'hello', '-r', '3'])
+    assert _runcalls == [('example', 'hello', 3)], _runcalls
+    # 缺省 -b:仅一块用户板时自动选中
+    _runcalls.clear()
+    _cli.app.meta(['run', 'hello'])
+    assert _runcalls == [('example', 'hello', 1)], _runcalls
+    # 省略目标名 = 列出目标(do_run 收到 None)
+    _runcalls.clear()
+    _cli.app.meta(['run'])
+    assert _runcalls == [('example', None, 1)], _runcalls
+
+# 多块用户板且未 -b:明确报错退出
+with _mock.patch.object(_cli, 'available_boards',
+                        lambda: {'a': '/x/a.toml', 'b': '/x/b.toml'}):
+    try:
+        _cli.app.meta(['run'])
+        raise AssertionError('多板未指定 -b 应报错退出')
+    except SystemExit as e:
+        assert '请用 -b' in str(e.code), e.code
+
+# power 分发:state 与板卡配置送抵 do_power(on/off 前的提示行照打)
+_pcalls = []
+with _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}), \
+        _mock.patch.object(_cli.power, 'do_power',
+                           lambda cfg, st: _pcalls.append((cfg['name'], st))), \
+        contextlib.redirect_stdout(_io2.StringIO()):
+    _cli.app.meta(['-b', 'ex', 'power', 'off'])
+assert _pcalls == [('ex', 'off')], _pcalls
+
+# power 非法 state:Literal 校验拒绝
+try:
+    _cli.app.meta(['power', 'bogus'])
+    raise AssertionError('非法 power state 应被拒绝')
+except SystemExit as e:
+    assert e.code == 1, e.code
+
+# ls 分发
+with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/example.toml'}), \
+        _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'description': '示例'}):
+    with contextlib.redirect_stdout(_io2.StringIO()) as _so:
+        _cli.app.meta(['ls'])
+assert 'example' in _so.getvalue(), _so.getvalue()
+
+# 无参数:打印帮助,退出码 0
+with contextlib.redirect_stdout(_io2.StringIO()) as _so:
+    try:
+        _cli.app.meta([])
+    except SystemExit as e:
+        assert e.code == 0, e.code
+assert 'run' in _so.getvalue(), _so.getvalue()
+
 print('software tests: OK')
