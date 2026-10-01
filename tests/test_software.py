@@ -10,13 +10,15 @@ from boardctl.plugins import EXECUTORS, POWER, TRANSPORT
 
 # 1. 插件注册表齐全
 assert {'loady', 'tftp'} <= set(TRANSPORT), TRANSPORT
-assert {'go', 'source', 'none', 'booti', 'bootm'} <= set(EXECUTORS), EXECUTORS
+assert {'go', 'source', 'none', 'booti', 'bootm', 'watch'} <= set(EXECUTORS), EXECUTORS
 assert {'mijia', 'command'} <= set(POWER), POWER
 
 # 2. 执行插件命令构造(新接口 build_cmd(addr, t))
 assert EXECUTORS['go'].build_cmd('0x80080000') == 'go 0x80080000'
 assert EXECUTORS['source'].build_cmd('0x80080000', {}) == 'source 0x80080000'
 assert EXECUTORS['none'].build_cmd('0x80080000', {}) is None
+assert EXECUTORS['watch'].PASSIVE is True          # 被动标记:runner 零写入分支
+assert EXECUTORS['watch'].build_cmd('0x80080000', {}) is None
 assert EXECUTORS['bootm'].build_cmd('0x80080000', {}) == 'bootm 0x80080000'
 assert EXECUTORS['bootm'].build_cmd('0x80080000', {'initrd': '0x82000000', 'fdt': '0x83000000'}) \
     == 'bootm 0x80080000 0x82000000 0x83000000'
@@ -55,8 +57,11 @@ assert cfg['tftp']['method'] == 'remote', cfg['tftp']
 assert cfg['power'].get('method') == 'command', cfg['power']
 assert cfg['run']['hello']['reset_before'] is True     # 示例即全自动开关机
 
-# 5. run 目标引用的文件真实存在(示例模板的占位路径除外)
+# 5. run 目标引用的文件真实存在(示例模板的占位路径除外;
+#    watch 等被动目标无 file——板子自己获取)
 for name, t in cfg['run'].items():
+    if not t.get('file'):
+        continue
     path = t['file']
     if not os.path.isabs(path):
         path = os.path.join(BASE_DIR, path)
@@ -86,7 +91,7 @@ def _stream(ser, t, **kw):
     import contextlib, io as _io
     buf = _io.StringIO()
     with contextlib.redirect_stdout(buf):
-        return _runner._stream_run(ser, 'go x', kw.get('prompt', 'soph#'),
+        return _runner._stream_run(ser, kw.get('cmd', 'go x'), kw.get('prompt', 'soph#'),
                                    t, False, kw.get('timeout', 1.0))
 
 
@@ -116,6 +121,74 @@ assert ended == 'fail' and 'never reached' not in out, (ended, out)
 out, ended = _stream(_FakeSer([b'DONE\npanic!\n']), {'expect': ['DONE'], 'fail_re': ['panic'],
                                                      'fail_linger': 0})
 assert ended == 'fail', ended
+
+# 被动观察(cmdline=None):零写入(连命令行回车都不发),输出照收、
+# 结束条件(断言命中/提示符/超时/fail_re)与主动模式完全一致
+ser = _FakeSer([b'U-Boot 2021.10\r\n', b'autoboot...\r\n', b'soph# '])
+out, ended = _stream(ser, {}, cmd=None)
+assert ended == 'prompt' and ser.written == b'' and 'U-Boot 2021.10' in out, (ended, out, ser.written)
+
+ser = _FakeSer([b'autoboot\r\n', b'TEST_RUNNER_DONE\r\n', b'never printed'])
+out, ended = _stream(ser, {'expect': ['TEST_RUNNER_DONE']}, cmd=None)
+assert ended == 'matched' and ser.written == b'', (ended, ser.written)
+
+ser = _FakeSer([])
+out, ended = _stream(ser, {}, cmd=None, timeout=0.2)
+assert ended == 'timeout' and ser.written == b'', (ended, ser.written)
+
+# 被动目标整链路(_execute_target):exec=watch 走静默上电分支
+# (不碰 power_cycle_and_wait——那个会发 Ctrl-C)、全程零写入、断言照常
+import unittest.mock as _mock  # noqa: E402
+
+_wser = _FakeSer([b'U-Boot 2021.10\r\n', b'TEST_RUNNER_DONE\r\n', b'soph# '])
+_pcalls = []
+
+
+class _FakeSession:
+    def __init__(self, cfg):
+        self.ser = _wser
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+_mincfg = {'name': 'fake', 'serial': {'url': '', 'timeout': 0.05},
+           'uboot': {'prompt': 'soph#', 'load_addr': '0x80080000'}, 'power': {}}
+import contextlib, io as _io2  # noqa: E402
+
+with contextlib.redirect_stdout(_io2.StringIO()), \
+        _mock.patch.object(_runner, 'UbootSession', _FakeSession), \
+        _mock.patch.object(_runner.power, 'power_cycle_quiet',
+                           lambda cfg, ser: _pcalls.append('quiet')), \
+        _mock.patch.object(_runner.power, 'power_cycle_and_wait',
+                           lambda cfg, boot_timeout=60: _pcalls.append('WAIT')):
+    ok, ended = _runner._execute_target(_mincfg, 'watch-t',
+                                        {'exec': 'watch', 'reset_before': True,
+                                         'after': 'none', 'timeout': 1.0,
+                                         'expect': ['TEST_RUNNER_DONE']})
+# 被动整链路:expect 一命中即收工(matched,不等提示符——与主动模式一致)
+assert ok and ended == 'matched' and _pcalls == ['quiet'], (ok, ended, _pcalls)
+assert _wser.written == b'', _wser.written   # 整链路零写入
+
+# 被动模式拒绝 file(板子自己获取,传了必是配错)
+try:
+    with contextlib.redirect_stdout(_io2.StringIO()):
+        _runner._execute_target(_mincfg, 'watch-t',
+                                {'exec': 'watch', 'file': 'hello.bin', 'after': 'none'})
+    raise AssertionError('watch 带 file 应被拒绝')
+except SystemExit as e:
+    assert 'file' in str(e.code), e.code
+
+# 主动模式缺 file 给明确报错(此前是裸 KeyError)
+try:
+    with contextlib.redirect_stdout(_io2.StringIO()):
+        _runner._execute_target(_mincfg, 'go-t', {'exec': 'go', 'after': 'none'})
+    raise AssertionError('主动模式缺 file 应报错')
+except SystemExit as e:
+    assert 'file' in str(e.code), e.code
 
 # 7. 电源语义层导入无误
 from boardctl import power  # noqa: E402,F401

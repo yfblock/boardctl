@@ -6,6 +6,9 @@ TOML 配置,**模块化 + 插件化**架构——一键全流程(冷启动 → �
 
 - `run <目标>`:自动开机 → TFTP/Ymodem 传输 → `go`/`source`/`booti` 执行 →
   输出断言(PASS/FAIL)→ 自动关机;`--repeat N` 多轮压测
+- 被动观察 `exec = "watch"`:板子自己跑自动流程(bootcmd/板上脚本)时,
+  全程零写入——不传输、不发任何命令(连 Ctrl-C 都不发,免得打断),
+  静默上电后从第一个字节开始收流,断言与收尾照常
 - 打断保证:Ctrl-C / kill 时若板在开机状态自动关机,程序结束后设备必为关
 - 板卡配置放 `~/.config/boardctl/boards/`,与代码完全解耦
 
@@ -49,6 +52,7 @@ boardctl -b myboard run hello -r 10   # 10 轮压测,汇总 N/10 PASS
 | | `method=local` + `local_dir` | boardctl 自建临时 TFTP 服务器(UDP 69 需特权,退出自动回收;69 被占/无特权时快速失败并提示改 external/loady) |
 | `[loady]` | `sender` | Ymodem 发送器(空则自动查找:Arch 为 `lrzsz-sb`,Debian/Ubuntu 为 `sb`) |
 | `[run.<名字>]` | `file` / `exec` / `method` / `timeout` | 启动目标(exec/method 即插件名) |
+| | `exec = "watch"` | 被动观察:板子自己完成传输与执行(bootcmd/自动脚本)时用——不传输、不发送任何命令(不允许 `file`),静默上电从第一个字节开始收流;断言与收尾与主动模式一致 |
 | | `addr` / `entry` | 加载地址 / 跳转执行地址;缺省都取 `uboot.load_addr`,加载与入口不同时分别指定 |
 | | `fdt` / `initrd` | booti 执行插件附加键:设备树地址(必需)/ initrd 地址(可选) |
 | | `reset_before` | 开头自动开机:关→开→等提示符(不依赖设备初始状态) |
@@ -68,14 +72,15 @@ boardctl/
 ├── runner.py     run 编排       ← 上述全部 + plugins
 └── plugins/      插件(目录约定自动发现,零注册代码)
     ├── transport/   传输插件:loady.py、tftp.py
-    ├── executors/   执行插件:go.py、source.py、none.py、booti.py、bootm.py
+    ├── executors/   执行插件:go.py、source.py、none.py、booti.py、bootm.py、watch.py(被动观察)
     └── power/       电源插件:mijia.py(小米云)、command.py(命令,默认)
 ```
 
 **插件接口**(约定写在各 `__init__.py`;可选声明 `CFG_SECTION` + `DEFAULTS` 自带配置默认值,TOML 优先):
 
 - 传输插件:`NAME` + `send(cfg, path, addr) -> bool`
-- 执行插件:`NAME` + `build_cmd(addr, t) -> str | None`
+- 执行插件:`NAME` + `build_cmd(addr, t) -> str | None`;可选声明 `PASSIVE = True`
+  走被动分支(不传输文件、零写入,`watch` 即此)
 - 电源插件:`NAME` + `set_power(cfg, on)` + `get_power(cfg) -> bool | None`
 
 新建插件 = 加一个文件,`[run].method`/`exec`/`[power].method` 立即可用,核心零改动。

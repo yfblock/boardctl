@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0 - 2026-10-01
+
+- **被动观察模式 `exec = "watch"`**:板子自己完成传输与执行(U-Boot bootcmd、
+  板上自动脚本)时,boardctl 全程零写入——不敲 `loady`/`tftpboot`/`go`,
+  连冷启动等提示符的 Ctrl-C 都不发(那会打断板上自动流程);只做:
+  静默上电(串口先挂好、清掉断电期线路噪声,从启动第一个字节开始收)→
+  被动收流 → 断言(expect/fail_re/fail_linger 照常)→ after 收尾;
+  此类目标不需要也不允许 `file`(板子自行获取)
+- 执行插件接口新增可选声明 `PASSIVE = True`(watch 即第一个使用者);
+  主动模式缺 `file` 由裸 KeyError 改为明确报错
+
 ## 0.6.3 - 2026-09-29
 
 - **fail_re 命中后延迟收工**:新增 `[run].fail_linger`(秒,默认 2)——

@@ -1,7 +1,8 @@
 """电源控制:全部方式统一为插件(plugins/power),本模块只做语义与编排
 
 - power_on / power_off / power_status:原语(经当前电源插件)
-- do_reset / power_cycle_and_wait:断电重启流程
+- do_reset / power_cycle_and_wait:断电重启流程(后者轮询等提示符,会写串口)
+- power_cycle_quiet:静默断电重启(零写入,被动模式 exec=watch 专用)
 - [power].method 选择插件;mijia = 原生小米云,command = 特制开关机命令(默认)
 """
 import sys
@@ -75,6 +76,21 @@ def do_reset(cfg):
     print('上电...', flush=True)
     power_on(cfg)
     print(f'已重启(如需看启动输出: boardctl -b {cfg["name"]} console)')
+
+
+def power_cycle_quiet(cfg, ser):
+    """静默断电重启(被动模式 exec=watch 专用):断 -> 延时 -> 清噪 -> 合,
+    全程不向串口写入一个字节——板子自己跑自动流程,任何写入都会打断它
+    (故不能复用 power_cycle_and_wait:轮询等提示符会周期性发 Ctrl-C)。
+    ser: 已打开的串口;上电前清掉断电期间的线路噪声,
+    保证之后收到的第一个字节就是启动输出"""
+    delay = float(cfg['power'].get('reset_delay', 3))
+    print('断电...', flush=True)
+    power_off(cfg)
+    time.sleep(delay)
+    ser.reset_input_buffer()
+    print('上电(静默,不写串口)...', flush=True)
+    power_on(cfg)
 
 
 def power_cycle_and_wait(cfg, boot_timeout=60):

@@ -55,9 +55,12 @@ def _stream_run(ser, cmdline, prompt, t, interactive, timeout):
     让错误信息/栈输出完整,然后判 FAIL 走收尾;同批输出正负断言双命中时
     判负优先。interactive 且 stdin 为 TTY 时进入交互:stdin 原样转发到
     设备、不限时(适合 go/booti 进入内核后继续操作)。
+    cmdline=None 时为被动观察:不向设备发送任何字节,只收流
+    (exec=watch——板子自己跑自动流程,任何写入都会打断它)。
     返回 (累计输出, 结束原因)。"""
     decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
-    ser.write(cmdline.encode() + b'\r')
+    if cmdline is not None:
+        ser.write(cmdline.encode() + b'\r')
     buf = ''
     deadline = time.monotonic() + timeout if not (interactive and sys.stdin.isatty()) else None
     fail_deadline = None
@@ -135,9 +138,11 @@ def evaluate(out, t):
 
 def _execute_target(cfg, name, t):
     """执行单轮:冷启动 -> 传输 -> 执行 -> 断言 -> 收尾。
-    收尾(after)放 finally:传输失败、插件 sys.exit、异常退出同样执行
-    (after=none 语义不变:保持现状);返回 (expect 判定 bool, 结束原因);
-    未配置断言时 bool 恒 True;基础设施错误直接退出。"""
+    被动模式(exec=watch)跳过传输与执行:静默上电 -> 零写入被动收流,
+    断言与收尾逻辑共用。收尾(after)放 finally:传输失败、插件 sys.exit、
+    异常退出同样执行(after=none 语义不变:保持现状);
+    返回 (expect 判定 bool, 结束原因);未配置断言时 bool 恒 True;
+    基础设施错误直接退出。"""
     def _finish():
         # 收尾:off 断电 | reset 重启回提示符 | none 保持现状(兼容旧的 reset_after 布尔)
         after = t.get('after', 'reset' if t.get('reset_after') else 'none')
@@ -153,44 +158,64 @@ def _execute_target(cfg, name, t):
             print(f'[{name}] 收尾(after={after})失败: {e}', file=sys.stderr, flush=True)
 
     try:
-        if t.get('reset_before'):
-            print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
-            power.power_cycle_and_wait(cfg)
-
-        path = t['file']
-        if not os.path.isabs(path):
-            path = os.path.join(BASE_DIR, path)
-        if not os.path.isfile(path):
-            sys.exit(f'文件不存在: {path}(先构建?)')
-        addr = t.get('addr', cfg['uboot']['load_addr'])   # 加载地址
-        entry = t.get('entry', addr)                      # 跳转/执行地址,默认与加载地址相同
-        method = t.get('method', 'tftp')
-        transport = TRANSPORT.get(method)
-        if transport is None:
-            sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
-
-        print(f'[{name}] 传输 {t["file"]} ({method}) -> {addr}', flush=True)
-        if not transport.send(cfg, path, addr):
-            sys.exit(1)
-
         exec_mode = t.get('exec', 'none')
         executor = EXECUTORS.get(exec_mode)
         if executor is None:
             sys.exit(f'未知 exec 方式: {exec_mode}(可用: {" ".join(sorted(EXECUTORS))})')
-        cmdline = executor.build_cmd(entry, t)
-        if cmdline is None:
-            print(f'[{name}] 已加载到 {addr}(exec={exec_mode},未执行)')
-            return True, 'loaded'
 
-        timeout = float(t.get('timeout', 15))
-        interactive = bool(t.get('interactive'))
-        print(f'[{name}] 执行: {cmdline}', flush=True)
-        with UbootSession(cfg) as s:
-            ok, _ = s.wait_prompt()
-            if not ok:
-                sys.exit('等待 U-Boot 提示符超时')
-            out, ended = _stream_run(s.ser, cmdline, cfg['uboot']['prompt'],
-                                     t, interactive, timeout)
+        if getattr(executor, 'PASSIVE', False):
+            # 被动模式(watch):板子自己完成传输与执行(bootcmd/自动脚本),
+            # boardctl 全程零写入——不发 loady/tftpboot/go,连冷启动等提示符的
+            # Ctrl-C 都不能发(会打断板上自动流程)。串口先挂好再上电,
+            # 从启动输出的第一个字节开始收
+            if t.get('file'):
+                sys.exit(f'exec={exec_mode} 为被动模式,不传输文件(板子自行获取)——去掉 file 配置')
+            timeout = float(t.get('timeout', 15))
+            interactive = bool(t.get('interactive'))
+            with UbootSession(cfg) as s:
+                if t.get('reset_before'):
+                    print(f'[{name}] 冷启动(静默:断电->上电,不写串口)', flush=True)
+                    power.power_cycle_quiet(cfg, s.ser)
+                print(f'[{name}] 被动观察(exec={exec_mode}:不发送任何命令)', flush=True)
+                out, ended = _stream_run(s.ser, None, cfg['uboot']['prompt'],
+                                         t, interactive, timeout)
+        else:
+            if t.get('reset_before'):
+                print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
+                power.power_cycle_and_wait(cfg)
+
+            if 'file' not in t:
+                sys.exit(f'exec={exec_mode} 需要配置 file(仅 watch 等被动模式可省略)')
+            path = t['file']
+            if not os.path.isabs(path):
+                path = os.path.join(BASE_DIR, path)
+            if not os.path.isfile(path):
+                sys.exit(f'文件不存在: {path}(先构建?)')
+            addr = t.get('addr', cfg['uboot']['load_addr'])   # 加载地址
+            entry = t.get('entry', addr)                      # 跳转/执行地址,默认与加载地址相同
+            method = t.get('method', 'tftp')
+            transport = TRANSPORT.get(method)
+            if transport is None:
+                sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
+
+            print(f'[{name}] 传输 {t["file"]} ({method}) -> {addr}', flush=True)
+            if not transport.send(cfg, path, addr):
+                sys.exit(1)
+
+            cmdline = executor.build_cmd(entry, t)
+            if cmdline is None:
+                print(f'[{name}] 已加载到 {addr}(exec={exec_mode},未执行)')
+                return True, 'loaded'
+
+            timeout = float(t.get('timeout', 15))
+            interactive = bool(t.get('interactive'))
+            print(f'[{name}] 执行: {cmdline}', flush=True)
+            with UbootSession(cfg) as s:
+                ok, _ = s.wait_prompt()
+                if not ok:
+                    sys.exit('等待 U-Boot 提示符超时')
+                out, ended = _stream_run(s.ser, cmdline, cfg['uboot']['prompt'],
+                                         t, interactive, timeout)
         print(f'[{name}] 执行结束({ended})', flush=True)
 
         ok, detail, checked = evaluate(out, t)
