@@ -1,7 +1,8 @@
 """run 编排域:Runner 单轮全流程(上电 -> 传输 -> 执行 -> 断言 -> 收尾);
 一块板(Board)对应多个 runner——每个 [run.<名>] 目标一个,repeat > 1 时
-同一 runner 复跑多轮并汇总。CLI(do_run)实时打印;程序化调用用
-run_collect(捕获输出,返回结构化结果)。
+同一 runner 复跑多轮并汇总。输出显示挂在捕获事件上(stream tap,由板域
+上电前挂/断电前摘):CLI 上电起即捕即显;程序化调用用 run_collect(把
+显示出口换成本轮缓冲,设备字节不落调用方进程的 stdout,返回结构化结果)。
 目标"怎么弄起来"由启动模式插件族(plugins/mode,[run.*].mode 选择)解释;
 流式引擎(_stream_run)消费板的常驻捕获流(水位 + 事件唤醒,见 stream.py)
 与断言引擎(evaluate)为共享代码——判定与收尾语义一致由共享代码保证,
@@ -63,11 +64,13 @@ def _resolve_mode(name, t):
 
 
 def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
-    """流式执行一条命令(ch = 板的常驻捕获流):新到文本实时打印,
-    结束条件取最先者——提示符重现(prompt)/ fail_re 命中(fail)/ 正向断言
-    全部命中(matched,非交互)/ 超时(timeout)/ 用户退出(user,Ctrl-\\;
-    仅交互模式)。观察窗口 = 入口水位:此前的字节已在捕获日志里但断言
-    不回看(与旧实现的调度窗口等价)。
+    """流式执行一条命令(ch = 板的常驻捕获流):结束条件取最先者——
+    提示符重现(prompt)/ fail_re 命中(fail)/ 正向断言全部命中
+    (matched,非交互)/ 超时(timeout)/ 用户退出(user,Ctrl-\\;
+    仅交互模式)。输出显示不在此处——挂在捕获事件上的显示回调
+    (stream tap,板域上电前挂上)即捕即显,这里只管结束判定与
+    (交互模式的)键盘转发。观察窗口 = 入口水位:此前的字节已在捕获
+    日志里(且已被 tap 显示),断言不回看(与旧实现的调度窗口等价)。
     fail_re 命中后不立即收工:再继续收集 fail_linger 秒(默认 2,可配 0)
     让错误信息/栈输出完整,然后判 FAIL 走收尾;同批输出正负断言双命中时
     判负优先。interactive 且 stdin 为 TTY 时进入交互:stdin 原样转发到
@@ -84,9 +87,6 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
     fail_deadline = None
     linger = max(0.0, float(t.get('fail_linger', 2)))   # fail 命中后的续收秒数
     raw = False
-
-    def _out(text):
-        print(text, end='', flush=True)
 
     def _ended(text):
         if prompt and prompt in text[-256:]:
@@ -105,11 +105,10 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
         while True:
             if fail_deadline is not None:   # 止损续收窗口:只收输出,不再判定
                 ch.wait(lambda _t, fd=fail_deadline: time.monotonic() >= fd,
-                        since, max(0.0, fail_deadline - time.monotonic()),
-                        on_chunk=_out)
+                        since, max(0.0, fail_deadline - time.monotonic()))
                 return ch.text(since), 'fail'
             slice_ = 0.05 if deadline is None else deadline - time.monotonic()
-            _, hit = ch.wait(_ended, since, max(0.0, slice_), on_chunk=_out)
+            _, hit = ch.wait(_ended, since, max(0.0, slice_))
             if hit:
                 buf = ch.text(since)
                 if prompt and prompt in buf[-256:]:
@@ -173,17 +172,18 @@ class Runner:
         self.t = t
 
     def _finish(self):
-        # 收尾:off 断电 | reset 重启回提示符 | none 保持现状(兼容旧的 reset_after 布尔)
+        # 收尾:off 断电 | reset 重启回提示符 | none 保持现状(兼容旧的 reset_after 布尔)。
+        # off/reset 经板域方法:显示 tap 先摘再断电(线路噪声不上屏)
         t, name = self.t, self.name
         after = t.get('after', 'reset' if t.get('reset_after') else 'none')
         try:
             if after == 'off':
                 print(f'[{name}] 断电收尾(after=off)', flush=True)
-                self.board.power.off()
+                self.board.power_off()
                 print(f'[{name}] 已断电', flush=True)
             elif after == 'reset':
                 print(f'[{name}] 输出结束,重启回提示符(after=reset)', flush=True)
-                self.board.power.reset()
+                self.board.reboot()
         except Exception as e:   # 收尾失败不掩盖执行阶段的原始异常
             print(f'[{name}] 收尾(after={after})失败: {e}', file=sys.stderr, flush=True)
 
@@ -255,6 +255,8 @@ def do_run(cfg, name, repeat=1):
 
 def run_collect(cfg, name, repeat=1, tail_lines=60):
     """程序化执行 run 目标(MCP/自动化用):捕获输出、不 sys.exit,返回结构化结果。
+    显示出口换成本轮缓冲(board.set_display)——设备输出(tap)与编排打印
+    都进 buf,绝不落调用方进程的 stdout(MCP 的 stdout 是协议通道);
     stderr 不捕获(留给日志);基础设施错误转为该轮 error 而非抛出。"""
     targets = cfg.get('run', {})
     if name not in targets:
@@ -271,6 +273,7 @@ def run_collect(cfg, name, repeat=1, tail_lines=60):
         rounds = []
         for i in range(1, total + 1):
             buf = io.StringIO()
+            board.set_display(buf)   # 本轮设备输出(tap 显示)也进 buf
             ok, ended, err = False, 'none', None
             try:
                 with contextlib.redirect_stdout(buf):

@@ -6,6 +6,8 @@ TOML 配置,**模块化 + 插件化**架构——一键全流程(冷启动 → �
 
 - `run <目标>`:自动开机 → TFTP/Ymodem 传输 → `cmd` 模板执行(`go {addr}`、`booti …`)→
   输出断言(PASS/FAIL)→ 自动关机;`--repeat N` 多轮压测
+- 串口输出**从上电起即捕即显**(常驻捕获 + 显示挂在捕获事件上):
+  启动日志、命令回显、传输与执行输出全程可见,无窗口遗漏
 - `power on|off|status`:手动电源控制/查询(经电源插件,run 全流程之外用)
 - 被动观察 `exec = "watch"`:板子自己跑自动流程(bootcmd/板上脚本)时,
   全程零写入——不传输、不发任何命令(连 Ctrl-C 都不发,免得打断),
@@ -72,11 +74,13 @@ boardctl/
 ├── cli.py        命令行接线(google-fire 类组件,无业务逻辑)
 ├── config.py     板卡 TOML 加载(不依赖其他模块)
 ├── serial.py     串口域:纯字节通道 + fd 借出(不依赖其他模块)
-├── stream.py     常驻捕获域:读线程持续捕字节进日志,等待 = 水位 + 谓词 + 条件变量 ← serial
+├── stream.py     常驻捕获域:读线程持续捕字节进日志,等待 = 水位 + 谓词 + 条件变量;
+│                 显示 tap 挂捕获事件即捕即显 ← serial
 ├── console.py    控制台域:提示符驱动的交互会话,U-Boot/Linux shell/其他 CLI 皆可 ← stream
 ├── power.py      电源域:Power 门面包 PowerDevice 插件,纯 on/off/status,绝不碰串口 ← plugins
 ├── board.py      开发板域:Board 组合 serial + stream + power + console(镜像配置段;
-│                 上下文管理器起停捕获线程)← power, serial, stream, console
+│                 上下文管理器起停捕获线程;显示 tap 上电前挂、断电前摘)
+│                 ← power, serial, stream, console
 ├── shell.py      指令域:命令执行(本机/ssh)← config
 ├── runner.py     run 编排域:Runner(一块板 ↔ 多个 runner)← board + plugins
 └── plugins/      插件即类(目录约定自动发现,零注册代码)

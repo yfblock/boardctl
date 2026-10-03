@@ -4,10 +4,14 @@
 - 阶段间隙的字节不丢——不必等谁开始读,字节先落日志,等待者从自己的
   水位起算(旧模型里这个角色由内核 socket 缓冲兼任;水位上移到用户态,
   "从哪起算"从调用纪律变成接口语义);
+- 显示挂在捕获事件上(tap):捕到新文本即在读线程上下文回调——上电起
+  的一切(启动日志/命令回显/执行输出)自然上屏,不靠各等待者自己打印;
+  摘下前放完积压(显示无缺口),重挂不回放断电窗口的字节(线路噪声
+  不补屏);断电窗口由 Board 摘下 tap;
 - fd 借出(loady 的 Ymodem)经 park/resume 与捕获线程握手:借出期间的
   协议字节归借用方,不进日志;resume 后通道里剩余的字节无缝接上;
 - 出站仍走通道直写(单写者在调用线程);设备对输入的回显是入站字节,
-  自然进日志。
+  自然进日志(也自然上屏)。
 
 读侧唯一归捕获线程,写侧唯一归调用线程——通道对象本身不碰。
 """
@@ -29,6 +33,8 @@ class ConsoleStream:
         self._parked = False            # fd 借出期:读线程让位
         self._paused = False            # 读线程已确认退出 read(借出方握手)
         self._error = None              # 读线程的致命错误(桥断开等),等待者代抛
+        self._tap = None                # 显示回调:读线程即捕即显("中断中显示")
+        self._shown = 0                 # 显示水位:已送进 tap 的日志长度
 
     # ---- 生命周期 ----
     def start(self):
@@ -64,11 +70,20 @@ class ConsoleStream:
                         continue
                 data = self.channel.read(256)   # 不持锁读,append 时再上锁
                 if data:
+                    tap, chunk = None, ''   # 解码可能为空(多字节拆在两次 read 间)
                     with self._cond:
                         text = self._decoder.decode(data)
                         if text:
                             self._log += text
+                            chunk = self._log[self._shown:]
+                            self._shown = len(self._log)
+                            tap = self._tap
                             self._cond.notify_all()
+                    if tap is not None and chunk:
+                        try:
+                            tap(chunk)  # 不持锁回调:显示阻塞不拖等待者/借出握手
+                        except Exception:
+                            pass        # 显示故障不杀死捕获线程
         except Exception as e:   # 桥断开/通道异常:等待者不该干等超时,代抛
             with self._cond:
                 self._error = e
@@ -99,15 +114,13 @@ class ConsoleStream:
         with self._cond:
             return self._log[since:]
 
-    def wait(self, pred, since, timeout, on_chunk=None):
+    def wait(self, pred, since, timeout):
         """从水位 since 起等待谓词成立:新字节即唤醒(条件变量,不轮询)。
         返回 (窗口文本, 是否在超时内命中)。谓词也可表达时间条件
         (如止损续收窗口的到期)——到期由 timeout 兜底唤醒。
-        on_chunk:等待期间对新到文本的回调,在调用线程上下文执行且不持锁
-        ——回调里可安全打印,打印阻塞不会拖住读线程。"""
+        显示不在此处:挂在捕获事件上(set_tap),等待者只管谓词。"""
         deadline = None if timeout is None else time.monotonic() + timeout
         with self._cond:
-            cursor = since
             while True:
                 text = self._log[since:]
                 if pred(text):
@@ -118,25 +131,33 @@ class ConsoleStream:
                     rem = deadline - time.monotonic()
                     if rem <= 0:
                         return text, False
-                if on_chunk is not None and len(self._log) > cursor:
-                    chunk = self._log[cursor:]
-                    cursor = len(self._log)
-                    self._cond.release()      # 回调不持锁
-                    try:
-                        on_chunk(chunk)
-                    finally:
-                        self._cond.acquire()
-                    continue                  # 回调后重查谓词/超时
-                if deadline is not None:
-                    self._cond.wait(min(rem, 0.5))
+                    self._cond.wait(rem)
                 else:
                     self._cond.wait(0.5)
 
+    def set_tap(self, fn):
+        """挂/摘显示回调(tap):fn(text) 在读线程上下文执行——捕到即显,
+        "中断中显示";等待者只管谓词,不掺打印职责。
+        摘下(fn=None)前先经旧回调放完未显示的积压——显示相对捕获无
+        缺口;重挂不回放摘下期间的字节(断电噪声不补屏),从挂上那一刻
+        起显示。回调异常被吞:显示故障不该毒害捕获线程与等待者。"""
+        with self._cond:
+            prev, backlog = self._tap, self._log[self._shown:]
+            self._shown = len(self._log)
+            self._tap = fn
+        if prev is not None and backlog:
+            try:
+                prev(backlog)
+            except Exception:
+                pass
+
     def clear(self):
         """清空捕获日志并重置解码残态(静默上电前丢弃断电噪声)。
-        此前的水位全部作废——调用方须保证没有在途等待者"""
+        此前的水位全部作废——调用方须保证没有在途等待者;未显示的积压
+        一并丢弃(噪声不回放进显示)"""
         with self._cond:
             self._log = ''
+            self._shown = 0
             self._decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
 
     # ---- fd 借出配合(loady 的 Ymodem) ----

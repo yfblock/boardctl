@@ -180,14 +180,16 @@ _pcalls = []
 
 class _FakeBoard:
     """Board 桩:serial 即伪串口(可注入),捕获流是真的;记录冷启动走哪条
-    路径(after=none 时 power 不触)。冷启动/静默上电的桩顺带模拟上电——
-    伪串口只有 power_on 后才吐字节"""
+    路径(after=none 时 power 不触)。冷启动/静默上电/断电收尾的桩顺带
+    模拟上电,并镜像真实 Board 的显示面(tap 上电前挂、断电前摘、
+    set_display 换程序化出口)——伪串口只有 power_on 后才吐字节"""
 
     def __init__(self, cfg, ser=None):
         self.cfg = cfg
         self.power = None
         self.serial = ser or _wser
         self.stream = _Stream(self.serial)
+        self._display = None
 
     @property
     def prompt(self):
@@ -196,13 +198,31 @@ class _FakeBoard:
     def session(self):
         return _RealSession(self.stream, self.cfg['console']['prompt'])
 
+    # 显示面(与真实 Board 同款):tap 出口可换成缓冲
+    def set_display(self, out):
+        self._display = out
+
+    def _show(self, text):
+        (self._display if self._display is not None else sys.stdout).write(text)
+
     def cold_boot(self, boot_timeout=60):
         _pcalls.append('WAIT')
+        self.stream.set_tap(self._show)   # 上电前挂显示(真实 Board 同款)
         self.serial.power_on()
 
     def quiet_boot(self):
         _pcalls.append('quiet')
         self.stream.clear()   # 真实 quiet_boot:清噪,捕获起点 = 上电
+        self.stream.set_tap(self._show)
+        self.serial.power_on()
+
+    def power_off(self):
+        _pcalls.append('off')
+        self.stream.set_tap(None)   # 真实 Board:先摘显示(放完积压)再断电
+
+    def reboot(self):
+        _pcalls.append('reboot')
+        self.stream.set_tap(None)
         self.serial.power_on()
 
 
@@ -246,6 +266,42 @@ finally:
     _cb.stream.stop()
 assert ok and ended == 'matched' and _pcalls == ['WAIT'], (ok, ended, _pcalls)
 assert _cser.written == b'./selftest.sh\r', _cser.written   # 只发命令本身
+
+# after=off 整链:断电收尾经板域 power_off(先摘显示、放完积压再断电)
+_pcalls.clear()
+_offser = _FakeSer([b'out line\r\n', b'soph# '])
+_ob = _FakeBoard(_mincfg, _offser)
+_ob.stream.start()
+try:
+    with contextlib.redirect_stdout(_io2.StringIO()):
+        ok, ended = _runner.Runner(_ob, 'off-t',
+                                   {'mode': 'watch', 'reset_before': True,
+                                    'after': 'off', 'timeout': 1.0}).run()
+finally:
+    _ob.stream.stop()
+assert ended == 'prompt' and _pcalls == ['quiet', 'off'], (ended, _pcalls)
+
+# 显示端到端:挂在捕获事件上——静默上电起的设备输出全程进程序化出口
+# (set_display 换缓冲;after=off 摘 tap 前放完积压,SPL 与断言句都在,
+# 不靠显示回调与谓词命中的时序运气)
+_pcalls.clear()
+_dser = _FakeSer([b'SPL banner\r\n', b'TEST_RUNNER_DONE\r\n'])
+_db = _FakeBoard(_mincfg, _dser)
+_dbuf = _io2.StringIO()
+_db.set_display(_dbuf)
+_db.stream.start()
+try:
+    with contextlib.redirect_stdout(_io2.StringIO()):
+        ok, ended = _runner.Runner(_db, 'disp-t',
+                                   {'mode': 'watch', 'reset_before': True,
+                                    'after': 'off', 'timeout': 1.0,
+                                    'expect': ['TEST_RUNNER_DONE']}).run()
+finally:
+    _db.stream.stop()
+assert ok and ended == 'matched', (ok, ended)
+assert 'SPL banner' in _dbuf.getvalue() and 'TEST_RUNNER_DONE' in _dbuf.getvalue(), \
+    _dbuf.getvalue()
+assert _pcalls == ['quiet', 'off'], _pcalls
 
 # console 模式拒绝 file/method/addr(无传输/地址语义)
 try:
@@ -309,8 +365,44 @@ try:
     _pst.clear()                    # 清日志与解码残态(静默上电前清噪)
     assert _pst.mark() == 0 and _pst.text(0) == ''
     assert _pst.wait(lambda txt: 'never' in txt, 0, 0.05)[1] is False   # 超时信号不丢
+
+    # tap(显示回调):捕到即显(读线程异步);摘下前放完积压(显示无缺口,
+    # 不靠时序运气);重挂不回放摘下期间的字节;回调抛异常不毒害捕获线程
+    _taplog = []
+    _pst.set_tap(_taplog.append)
+    _pser.live = [b'tap1\r\n']
+    assert _pst.wait(lambda txt: 'tap1' in txt, 0, 2)[1]      # 进日志
+    _pst.set_tap(None)                                        # 摘:先放完积压
+    assert ''.join(_taplog) == 'tap1\r\n', _taplog
+    _pser.live = [b'tap2\r\n']                                # 摘下期间:进日志不显示
+    assert _pst.wait(lambda txt: 'tap2' in txt, 0, 2)[1]
+    _pst.set_tap(_taplog.append)                              # 重挂:不回放 tap2
+    _pser.live = [b'tap3\r\n']
+    assert _pst.wait(lambda txt: 'tap3' in txt, 0, 2)[1]
+    _pst.set_tap(None)
+    assert ''.join(_taplog) == 'tap1\r\ntap3\r\n', _taplog
+
+    def _bad_tap(_text):
+        raise RuntimeError('显示炸了也不许死')
+
+    _pst.set_tap(_bad_tap)
+    _pser.live = [b'tap4\r\n']
+    assert _pst.wait(lambda txt: 'tap4' in txt, 0, 2)[1]      # 捕获线程仍活着
 finally:
     _pst.stop()
+
+# 多字节字符拆在两次 read 之间:空解码帧不炸泵,显示/捕获都不丢字
+_pser2 = _FakeSer([b'\xe4\xb8', b'\xad\xe6\x96\x87\r\n'], powered=True)
+_pst2 = _Stream(_pser2)
+_t2 = []
+_pst2.set_tap(_t2.append)
+_pst2.start()
+try:
+    assert _pst2.wait(lambda txt: '中文' in txt, 0, 2)[1]
+    _pst2.set_tap(None)
+    assert ''.join(_t2) == '中文\r\n', _t2
+finally:
+    _pst2.stop()
 
 # 7. 电源语义层导入无误
 from boardctl import power  # noqa: E402,F401
@@ -354,7 +446,8 @@ with tempfile.TemporaryDirectory() as td:
         assert 'external' in str(e) and 'loady' in str(e), e
 
 # 9. 电源:插件即类(PowerDevice 子类,多态同接口),域门面 Power 也是类
-#    (包住插件实例,统一错误包装;reset 节拍统一在域内);mijia 开关量属性名
+#    (包住插件实例,统一错误包装;节拍值 reset_delay 住域内,节拍编排在
+#    板域——显示 tap 要挂在上电前);mijia 开关量属性名
 #    可配(默认 on),设备缓存/锁是插件类属性(封装,跨实例共享)
 from boardctl import power as _power_mod  # noqa: E402
 from boardctl.plugins import POWER as _POWER_REG  # noqa: E402

@@ -58,7 +58,8 @@ class LoadyTransport(Transport):
             channel.resume()
         tail, _ = s.read_until(s.prompt, 10)
         print(err.decode('utf-8', 'replace').strip())
-        print(tail.strip('\r\n'))
+        # 串口侧输出不重打:tap 已即捕即显(loady 回显在借出前落日志,
+        # Total Size 在 resume 后无缝接上——全程都在显示)
         m = re.search(r'Total Size\s*=\s*(0x[0-9a-fA-F]+|\d+)', tail)
         if m:
             size = int(m.group(1), 0)

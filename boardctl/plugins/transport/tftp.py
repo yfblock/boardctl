@@ -94,7 +94,7 @@ class TftpTransport(Transport):
         if self.cfg['uboot'].get('ensure_server_ip') and server_ip:
             s.cmd(f'setenv serverip {server_ip}')
         out, hit = s.cmd(f'tftpboot {addr} {fname}', timeout=60)
-        print(out.strip('\r\n'))
+        # 输出不重打:捕获事件上的显示回调(tap)已即捕即显(含回显与进度)
         m = re.search(r'Bytes transferred = (\d+)', out)
         if m:
             actual = os.path.getsize(path)
