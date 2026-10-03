@@ -214,7 +214,7 @@ class Runner:
                     print(f'[{name}] 冷启动(静默:断电->上电,不写串口)', flush=True)
                     self.board.quiet_boot()
                 print(f'[{name}] 被动观察(exec={exec_mode}:不发送任何命令)', flush=True)
-                out, ended = _stream_run(s.channel, None, cfg['uboot']['prompt'],
+                out, ended = _stream_run(s.channel, None, self.board.prompt,
                                          t, interactive, timeout)
             else:
                 if t.get('reset_before'):
@@ -249,7 +249,7 @@ class Runner:
                 ok, _ = s.wait_prompt()
                 if not ok:
                     sys.exit('等待 U-Boot 提示符超时')
-                out, ended = _stream_run(s.channel, cmdline, cfg['uboot']['prompt'],
+                out, ended = _stream_run(s.channel, cmdline, self.board.prompt,
                                          t, interactive, timeout)
             print(f'[{name}] 执行结束({ended})', flush=True)
 

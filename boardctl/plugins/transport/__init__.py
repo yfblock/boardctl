@@ -11,7 +11,7 @@ Transport 子类约定:
                                    # 也不关闭它(板负责生命周期)
 
 类属性 CFG_SECTION + DEFAULTS(可选)由 config 合并为默认配置。
-可用的域依赖:serial(字节通道)/ session(U-Boot 协议)/ shell(指令域)。
+可用的域依赖:serial(字节通道)/ console(控制台会话)/ shell(指令域)。
 插件之间禁止互相 import。在此目录新建 .py 文件即自动注册。
 """
 from abc import ABC, abstractmethod
@@ -26,5 +26,5 @@ class Transport(ABC):
     DEFAULTS = None        # 可选:该段默认值
 
     @abstractmethod
-    def send(self, path, addr):
-        """把文件传到设备的 addr;成功返回 True"""
+    def send(self, channel, path, addr):
+        """把文件传到设备的 addr;成功返回 True(channel 由编排借出,不关)"""

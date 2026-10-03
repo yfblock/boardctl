@@ -146,7 +146,7 @@ _pcalls = []
 
 
 class _FakeSession:
-    """UbootSession 桩:纯借用,不持有不关通道"""
+    """ConsoleSession 桩:纯借用,不持有不关通道"""
 
     def __init__(self, channel, prompt):
         self.channel = channel
@@ -162,8 +162,12 @@ class _FakeBoard:
         self.power = None
         self.serial = _wser
 
+    @property
+    def prompt(self):
+        return self.cfg['console']['prompt']
+
     def session(self):
-        return _FakeSession(self.serial, self.cfg['uboot']['prompt'])
+        return _FakeSession(self.serial, self.cfg['console']['prompt'])
 
     def cold_boot(self, boot_timeout=60):
         _pcalls.append('WAIT')
@@ -173,7 +177,8 @@ class _FakeBoard:
 
 
 _mincfg = {'name': 'fake', 'serial': {'url': '', 'timeout': 0.05},
-           'uboot': {'prompt': 'soph#', 'load_addr': '0x80080000'}, 'power': {}}
+           'console': {'prompt': 'soph#'},
+           'uboot': {'load_addr': '0x80080000'}, 'power': {}}
 import contextlib, io as _io2  # noqa: E402
 
 with contextlib.redirect_stdout(_io2.StringIO()):
@@ -401,6 +406,11 @@ assert 'SYNOPSIS' in _so.getvalue(), _so.getvalue()
 with tempfile.TemporaryDirectory() as _td:
     (Path(_td) / 'x.toml').write_text('description = "t"\n[serial]\nurl = "socket://h:1"\n',
                                       encoding='utf-8')
+    (Path(_td) / 'y.toml').write_text(
+        'description = "旧式"\n[uboot]\nprompt = "ub# "\nload_addr = "0x1"\n',
+        encoding='utf-8')
+    (Path(_td) / 'z.toml').write_text(
+        '[console]\nprompt = "sh$ "\n[uboot]\nprompt = "=>"\n', encoding='utf-8')
     (Path(_td) / 'example.toml').write_text('description = "覆盖同名内置示例"\n',
                                             encoding='utf-8')
     (Path(_td) / 'ignored.txt').write_text('not a board', encoding='utf-8')
@@ -412,7 +422,12 @@ with tempfile.TemporaryDirectory() as _td:
         assert 'ignored.txt' not in _boards
         _c = load_board('x')
         assert _c['serial']['url'] == 'socket://h:1'
-        assert _c['uboot']['prompt'] == '=>'       # DEFAULTS 照常合并
+        assert _c['console']['prompt'] == '=>'       # DEFAULTS 照常合并
+        assert 'prompt' not in _c['uboot']           # 提示符已不归 [uboot]
+        _c = load_board('y')                         # 旧式:prompt 住 [uboot]
+        assert _c['console']['prompt'] == 'ub# '     # 无 [console] 时自动继承
+        _c = load_board('z')                         # 两边都有:[console] 优先
+        assert _c['console']['prompt'] == 'sh$ '
     finally:
         os.environ.pop('BOARDCTL_BOARDS', None)
 

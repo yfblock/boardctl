@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 
-from ...session import UbootSession
+from ...console import ConsoleSession
 from . import Transport
 
 
@@ -87,7 +87,7 @@ class TftpTransport(Transport):
         self._stage_file(path)
         fname = os.path.basename(path)
         server_ip = self.cfg['uboot'].get('server_ip')
-        s = UbootSession(channel, self.cfg['uboot']['prompt'])
+        s = ConsoleSession(channel, self.cfg['console']['prompt'])
         ok, _ = s.wait_prompt()
         if not ok:
             sys.exit('等待 U-Boot 提示符超时,设备可能不在 U-Boot 命令行')

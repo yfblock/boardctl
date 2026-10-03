@@ -1,12 +1,34 @@
-"""U-Boot 协议(开发板域):在一截串口通道上收发 U-Boot 命令——
-提示符等待、命令发送、输出收集。纯借用:通道由调用方给(通常是板上的
-SerialChannel,随板关闭),会话不持有、不关闭通道"""
+"""控制台域:板上跑的交互载荷——U-Boot、Linux shell、其他 CLI 皆可。
+boardctl 对控制台只有一个约定:有提示符的交互式会话(prompt 可配,
+Ctrl-C 可打断当前输入行);提示符驱动的一切(等提示符/执行命令/收输出)
+围绕它展开。U-Boot 特有的加载地址、serverip、tftpboot/loady 命令不属于
+这里——它们住在 [uboot] 配置段与传输插件/cmd 模板中。
+"""
 import codecs
 import time
 
 
-class UbootSession:
-    """连接串口通道,等待 U-Boot 提示符,可执行命令并收集输出(不持有通道)"""
+class Console:
+    """一块板的控制台:提示符 + 会话工厂 + 可交互判定"""
+
+    def __init__(self, prompt):
+        self.prompt = prompt
+
+    @classmethod
+    def from_cfg(cls, cfg):
+        return cls(cfg['console']['prompt'])
+
+    def session(self, channel):
+        """在这截串口通道上开一个控制台会话(借用,不持有通道)"""
+        return ConsoleSession(channel, self.prompt)
+
+    def interactive_ready(self, session, timeout=6):
+        """上电后系统是否已到可交互态(提示符应答)"""
+        return session.wait_prompt(timeout=timeout)[0]
+
+
+class ConsoleSession:
+    """连接串口通道,等待控制台提示符,可执行命令并收集输出(不持有通道)"""
 
     def __init__(self, channel, prompt):
         self.channel = channel

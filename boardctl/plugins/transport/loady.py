@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 
-from ...session import UbootSession
+from ...console import ConsoleSession
 from . import Transport
 
 
@@ -29,7 +29,7 @@ class LoadyTransport(Transport):
         sender = self._sender()
         if not sender:
             sys.exit('找不到 Ymodem 发送器(Arch: lrzsz 包的 lrzsz-sb;Debian: lrzsz 的 sb)')
-        s = UbootSession(channel, self.cfg['uboot']['prompt'])
+        s = ConsoleSession(channel, self.cfg['console']['prompt'])
         ok, _ = s.wait_prompt()
         if not ok:
             sys.exit('等待 U-Boot 提示符超时,设备可能不在 U-Boot 命令行')

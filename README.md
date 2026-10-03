@@ -46,7 +46,8 @@ boardctl -b myboard power off      # 手动关机(on 同理)
 |---|---|---|
 | 顶层 | `ssh_host` | 命令模式命令的执行位置:空 = 本机;填 ssh 别名(如 `myserver`)= 经 ssh 远端执行,别名/端口/用户走 `~/.ssh/config` |
 | `[serial]` | `url` / `timeout` | 串口 URL(TCP 桥 `socket://host:port`、本地 `ttyUSB0`、`rfc2217://...`) |
-| `[uboot]` | `prompt` / `load_addr` | U-Boot 提示符、默认加载地址 |
+| `[console]` | `prompt` | 控制台提示符(命令结束的判定依据)——板上跑什么配什么:U-Boot `=>`、Linux shell `#`…皆可;旧配置写在 `[uboot].prompt` 的自动继承,零改动可用 |
+| `[uboot]` | `load_addr` | U-Boot 默认加载地址 |
 | | `server_ip` / `ensure_server_ip` | TFTP 服务器地址;目标 U-Boot 环境易失(无 saveenv)时置 true,连接时自动恢复 |
 | `[power]` | `method = "mijia"` + `[power.mijia]` dev_name/did | 电源插件:原生小米云(凭证复用 `mijiaAPI` CLI 登录态,首次需 `mijiaAPI login` 扫码),不走 ssh_host |
 | | `[power.mijia]` prop | 开关量属性名,默认 `"on"`;部分设备的电源 prop 不是 `on`,按设备属性表改 |
@@ -71,9 +72,9 @@ boardctl/
 ├── cli.py        命令行接线(google-fire 类组件,无业务逻辑)
 ├── config.py     板卡 TOML 加载(不依赖其他模块)
 ├── serial.py     串口域:纯字节通道 + fd 借出(不依赖其他模块)
-├── session.py    U-Boot 协议:在串口通道上收发命令 ← serial
+├── console.py    控制台域:提示符驱动的交互会话,U-Boot/Linux shell/其他 CLI 皆可 ← serial
 ├── power.py      电源域:Power 门面包 PowerDevice 插件,纯 on/off/status,绝不碰串口 ← plugins
-├── board.py      开发板域:Board 组合 serial + power(镜像配置段)← power, session
+├── board.py      开发板域:Board 组合 serial + power + console(镜像配置段)← power, console
 ├── shell.py      指令域:命令执行(本机/ssh)← config
 ├── runner.py     run 编排域:Runner(一块板 ↔ 多个 runner)← board + plugins
 └── plugins/      插件即类(目录约定自动发现,零注册代码)

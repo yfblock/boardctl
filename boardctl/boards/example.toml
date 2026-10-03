@@ -8,8 +8,11 @@ ssh_host = ""                      # 命令模式命令的执行位置:空 = 本
 url = "socket://192.0.2.10:5000"   # 串口桥 URL(如 ser2net/TCP 透传);也支持本地 ttyUSB0、rfc2217://
 timeout = 0.2
 
+[console]
+prompt = "=>"                      # 控制台提示符(命令结束的判定依据);
+                                   # 板上跑什么就配什么:U-Boot "=>"、Linux shell "#"…皆可
+
 [uboot]
-prompt = "=>"                      # U-Boot 提示符(命令结束的判定依据)
 load_addr = "0x80080000"           # 默认加载地址
 ip_addr = "192.0.2.50"             # 设备自身 IP(静态)
 server_ip = "192.0.2.1"            # TFTP 服务器地址

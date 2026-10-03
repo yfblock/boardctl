@@ -10,11 +10,11 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 随包分发的示例板卡目录(仅作模板兜底,优先级最低)
 BUNDLED_BOARDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'boards')
 
-# 全局默认值(仅真正跨模块的段;插件自己的默认值由插件模块的 DEFAULTS 提供)
+# 全局默认值(仅真正跨模块的段;插件自己的默认值由插件类的 DEFAULTS 提供)
 DEFAULTS = {
     'serial': {'url': 'socket://localhost:5000', 'timeout': 0.2},
-    'uboot': {
-        'prompt': '=>',
+    'console': {'prompt': '=>'},    # 控制台提示符(U-Boot/Linux shell/其他 CLI 皆可)
+    'uboot': {                      # U-Boot 特有:加载地址/网络,由 cmd 模板与传输插件取用
         'load_addr': '0x80080000',
         'ip_addr': '',
         'server_ip': '',
@@ -66,6 +66,11 @@ def load_board(name):
     cfg['power'] = dict(data.get('power', {}))
     cfg['tftp'] = dict(data.get('tftp', {}))
     cfg['run'] = data.get('run', {})
+
+    # 旧配置兼容:prompt 原住在 [uboot];控制台不一定姓 U-Boot,现归 [console]。
+    # 无 [console] 段时提示符继承 [uboot].prompt,老配置零改动可用
+    if 'console' not in data and 'prompt' in cfg['uboot']:
+        cfg['console']['prompt'] = cfg['uboot']['prompt']
 
     # 插件自带默认值:按插件类的 CFG_SECTION 声明合并(TOML 值优先)。
     # 函数内 import,避免 config <-> plugins 模块级循环依赖
