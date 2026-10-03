@@ -5,7 +5,10 @@
 
 Transport 子类约定:
   __init__(self, cfg)              # 板卡配置,各插件自取所需段
-  send(self, path, addr) -> bool   # 把文件传到设备的 addr
+  send(self, channel, path, addr) -> bool
+                                   # 把文件传到设备的 addr;channel 是板的
+                                   # 串口通道,由编排借出——插件不自开连接,
+                                   # 也不关闭它(板负责生命周期)
 
 类属性 CFG_SECTION + DEFAULTS(可选)由 config 合并为默认配置。
 可用的域依赖:serial(字节通道)/ session(U-Boot 协议)/ shell(指令域)。

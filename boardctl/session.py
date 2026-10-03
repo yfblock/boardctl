@@ -1,32 +1,16 @@
 """U-Boot 协议(开发板域):在一截串口通道上收发 U-Boot 命令——
-提示符等待、命令发送、输出收集。字节通道由串口域(serial.SerialChannel)
-提供,会话关闭时通道一并关闭"""
+提示符等待、命令发送、输出收集。纯借用:通道由调用方给(通常是板上的
+SerialChannel,随板关闭),会话不持有、不关闭通道"""
 import codecs
 import time
 
-from .serial import SerialChannel
-
 
 class UbootSession:
-    """连接串口通道,等待 U-Boot 提示符,可执行命令并收集输出"""
+    """连接串口通道,等待 U-Boot 提示符,可执行命令并收集输出(不持有通道)"""
 
     def __init__(self, channel, prompt):
         self.channel = channel
         self.prompt = prompt
-
-    @classmethod
-    def from_cfg(cls, cfg):
-        """按板卡配置开一个会话(串口通道随会话关闭)"""
-        return cls(SerialChannel.from_cfg(cfg), cfg['uboot']['prompt'])
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        try:
-            self.channel.close()
-        except OSError:
-            pass
 
     def read_until(self, pattern, timeout):
         """读到文本里出现 pattern 为止;返回 (累计文本, 是否命中)"""

@@ -16,7 +16,6 @@ import time
 from .board import Board
 from .config import BASE_DIR
 from .plugins import TRANSPORT
-from .session import UbootSession
 
 QUIT_BYTE = 0x1C   # 交互模式下退出
 
@@ -210,13 +209,13 @@ class Runner:
                     sys.exit(f'exec={exec_mode} 为被动模式,不传输文件(板子自行获取)——去掉 file 配置')
                 timeout = float(t.get('timeout', 15))
                 interactive = bool(t.get('interactive'))
-                with UbootSession.from_cfg(cfg) as s:
-                    if t.get('reset_before'):
-                        print(f'[{name}] 冷启动(静默:断电->上电,不写串口)', flush=True)
-                        self.board.quiet_boot(s.channel)
-                    print(f'[{name}] 被动观察(exec={exec_mode}:不发送任何命令)', flush=True)
-                    out, ended = _stream_run(s.channel, None, cfg['uboot']['prompt'],
-                                             t, interactive, timeout)
+                s = self.board.session()   # 板的通道先挂好再上电,从首字节收流
+                if t.get('reset_before'):
+                    print(f'[{name}] 冷启动(静默:断电->上电,不写串口)', flush=True)
+                    self.board.quiet_boot()
+                print(f'[{name}] 被动观察(exec={exec_mode}:不发送任何命令)', flush=True)
+                out, ended = _stream_run(s.channel, None, cfg['uboot']['prompt'],
+                                         t, interactive, timeout)
             else:
                 if t.get('reset_before'):
                     print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
@@ -236,7 +235,7 @@ class Runner:
                     sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
 
                 print(f'[{name}] 传输 {t["file"]} ({method}) -> {addr}', flush=True)
-                if not transport(cfg).send(path, addr):
+                if not transport(cfg).send(self.board.serial, path, addr):
                     sys.exit(1)
 
                 if cmdline is None:
@@ -246,12 +245,12 @@ class Runner:
                 timeout = float(t.get('timeout', 15))
                 interactive = bool(t.get('interactive'))
                 print(f'[{name}] 执行: {cmdline}', flush=True)
-                with UbootSession.from_cfg(cfg) as s:
-                    ok, _ = s.wait_prompt()
-                    if not ok:
-                        sys.exit('等待 U-Boot 提示符超时')
-                    out, ended = _stream_run(s.channel, cmdline, cfg['uboot']['prompt'],
-                                             t, interactive, timeout)
+                s = self.board.session()   # 同一条板通道:传输、执行不分家
+                ok, _ = s.wait_prompt()
+                if not ok:
+                    sys.exit('等待 U-Boot 提示符超时')
+                out, ended = _stream_run(s.channel, cmdline, cfg['uboot']['prompt'],
+                                         t, interactive, timeout)
             print(f'[{name}] 执行结束({ended})', flush=True)
 
             ok, detail, checked = evaluate(out, t)
@@ -284,13 +283,13 @@ def do_run(cfg, name, repeat=1):
         print(f'[{name}] repeat>1,自动启用 reset_before(每轮冷启动)', flush=True)
         t['reset_before'] = True
 
-    board = Board(cfg)
-    runner = Runner(board, name, t)   # 一块板 ↔ 多个 runner(每目标一个)
-    results = []
-    for i in range(1, total + 1):
-        if total > 1:
-            print(f'===== 第 {i}/{total} 轮 =====', flush=True)
-        results.append(runner.run()[0])
+    with Board(cfg) as board:   # 板持有唯一串口通道,结束时关
+        runner = Runner(board, name, t)   # 一块板 ↔ 多个 runner(每目标一个)
+        results = []
+        for i in range(1, total + 1):
+            if total > 1:
+                print(f'===== 第 {i}/{total} 轮 =====', flush=True)
+            results.append(runner.run()[0])
 
     if total > 1:
         p = sum(1 for r in results if r)
@@ -311,25 +310,25 @@ def run_collect(cfg, name, repeat=1, tail_lines=60):
     if total > 1 and not t.get('reset_before'):
         t['reset_before'] = True
 
-    board = Board(cfg)
-    runner = Runner(board, name, t)
-    rounds = []
-    for i in range(1, total + 1):
-        buf = io.StringIO()
-        ok, ended, err = False, 'none', None
-        try:
-            with contextlib.redirect_stdout(buf):
-                ok, ended = runner.run()
-        except SystemExit as e:
-            err = str(e.code) if isinstance(e.code, str) else f'exit {e.code}'
-        output = buf.getvalue()
-        rounds.append({
-            'round': i,
-            'pass': bool(ok) and err is None,
-            'ended': ended,
-            'error': err,
-            'output_tail': '\n'.join(output.splitlines()[-tail_lines:]),
-        })
+    with Board(cfg) as board:
+        runner = Runner(board, name, t)
+        rounds = []
+        for i in range(1, total + 1):
+            buf = io.StringIO()
+            ok, ended, err = False, 'none', None
+            try:
+                with contextlib.redirect_stdout(buf):
+                    ok, ended = runner.run()
+            except SystemExit as e:
+                err = str(e.code) if isinstance(e.code, str) else f'exit {e.code}'
+            output = buf.getvalue()
+            rounds.append({
+                'round': i,
+                'pass': bool(ok) and err is None,
+                'ended': ended,
+                'error': err,
+                'output_tail': '\n'.join(output.splitlines()[-tail_lines:]),
+            })
     passed = sum(1 for r in rounds if r['pass'])
     return {'board': cfg['name'], 'target': name, 'repeat': total,
             'rounds': rounds, 'passed': passed, 'failed': total - passed,

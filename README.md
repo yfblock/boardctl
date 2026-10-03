@@ -73,7 +73,7 @@ boardctl/
 ├── serial.py     串口域:纯字节通道 + fd 借出(不依赖其他模块)
 ├── session.py    U-Boot 协议:在串口通道上收发命令 ← serial
 ├── power.py      电源域:Power 门面包 PowerDevice 插件,纯 on/off/status,绝不碰串口 ← plugins
-├── board.py      开发板域:冷启动/静默上电/会话工厂 ← power, session
+├── board.py      开发板域:Board 组合 serial + power(镜像配置段)← power, session
 ├── shell.py      指令域:命令执行(本机/ssh)← config
 ├── runner.py     run 编排域:Runner(一块板 ↔ 多个 runner)← board + plugins
 └── plugins/      插件即类(目录约定自动发现,零注册代码)
@@ -85,7 +85,7 @@ boardctl/
 `PLUGIN = <类>`,类声明 `NAME` 与可选 `CFG_SECTION` + `DEFAULTS` 自带配置
 默认值,TOML 优先;新建插件 = 丢一个文件):
 
-- 传输插件:`Transport` 子类,`send(path, addr) -> bool`
+- 传输插件:`Transport` 子类,`send(channel, path, addr) -> bool`(channel 为板借出的串口通道,插件不自开连接)
 - 电源插件:`PowerDevice` 子类,`on()` / `off()` / `status() -> bool | None`
 
 新建插件 = 加一个文件,`[run].method`/`[power].method` 立即可用,核心零改动

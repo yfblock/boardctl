@@ -82,28 +82,29 @@ class TftpTransport(Transport):
                          '没有 tftpd 时,该目标改 method = "loady"(Ymodem 串口传输,免特权)')
             sys.exit(f'未知 tftp.method: {method}(可用: remote / external)')
 
-    def send(self, path, addr):
+    def send(self, channel, path, addr):
+        """channel: 板的串口通道(编排借出,插件不自开连接,用完不关)"""
         self._stage_file(path)
         fname = os.path.basename(path)
         server_ip = self.cfg['uboot'].get('server_ip')
-        with UbootSession.from_cfg(self.cfg) as s:
-            ok, _ = s.wait_prompt()
-            if not ok:
-                sys.exit('等待 U-Boot 提示符超时,设备可能不在 U-Boot 命令行')
-            if self.cfg['uboot'].get('ensure_server_ip') and server_ip:
-                s.cmd(f'setenv serverip {server_ip}')
-            out = s.cmd(f'tftpboot {addr} {fname}', timeout=60)
-            print(out.strip('\r\n'))
-            m = re.search(r'Bytes transferred = (\d+)', out)
-            if m:
-                actual = os.path.getsize(path)
-                size = int(m.group(1))
-                ok = size == actual
-                print(f'tftp {"OK" if ok else "大小不符"}: {size} 字节 -> {addr} (server {server_ip})'
-                      + ('' if ok else f'(本地 {actual})'))
-                return ok
-            print('tftp 传输失败(未见 Bytes transferred)')
-            return False
+        s = UbootSession(channel, self.cfg['uboot']['prompt'])
+        ok, _ = s.wait_prompt()
+        if not ok:
+            sys.exit('等待 U-Boot 提示符超时,设备可能不在 U-Boot 命令行')
+        if self.cfg['uboot'].get('ensure_server_ip') and server_ip:
+            s.cmd(f'setenv serverip {server_ip}')
+        out = s.cmd(f'tftpboot {addr} {fname}', timeout=60)
+        print(out.strip('\r\n'))
+        m = re.search(r'Bytes transferred = (\d+)', out)
+        if m:
+            actual = os.path.getsize(path)
+            size = int(m.group(1))
+            ok = size == actual
+            print(f'tftp {"OK" if ok else "大小不符"}: {size} 字节 -> {addr} (server {server_ip})'
+                  + ('' if ok else f'(本地 {actual})'))
+            return ok
+        print('tftp 传输失败(未见 Bytes transferred)')
+        return False
 
 
 PLUGIN = TftpTransport

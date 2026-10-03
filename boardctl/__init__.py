@@ -5,7 +5,8 @@
   power.py     电源域:Power 门面包 PowerDevice 插件,纯电源动作绝不碰串口(依赖 plugins)
   shell.py     指令域:本机/ssh 命令执行(依赖 config)
   session.py   U-Boot 协议:在串口通道上收发命令(依赖 serial)
-  board.py     开发板域:冷启动/静默上电/会话工厂,组合电源+串口(依赖 power, session)
+  board.py     开发板域:Board 组合 SerialChannel + Power(镜像配置的
+               [serial]/[power] 段),冷启动/静默上电/会话工厂(依赖 power, session)
   config.py    板卡 TOML 加载(不依赖其他模块)
   runner.py    run 编排域:Runner,一块板 ↔ 多个 runner(依赖 board + plugins)
   cli.py       命令行入口,只做接线(google-fire)

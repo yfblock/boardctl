@@ -146,34 +146,29 @@ _pcalls = []
 
 
 class _FakeSession:
-    """UbootSession 桩:from_cfg 开出挂在 _wser 上的会话"""
+    """UbootSession 桩:纯借用,不持有不关通道"""
 
     def __init__(self, channel, prompt):
         self.channel = channel
         self.prompt = prompt
 
-    @classmethod
-    def from_cfg(cls, cfg):
-        return cls(_wser, cfg['uboot']['prompt'])
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
 
 class _FakeBoard:
-    """Board 桩:记录冷启动走的是哪条路径(after=none 时 power 不触)"""
+    """Board 桩:serial 即伪串口,session 借它开;记录冷启动走哪条路径
+    (after=none 时 power 不触)"""
 
     def __init__(self, cfg):
         self.cfg = cfg
         self.power = None
+        self.serial = _wser
+
+    def session(self):
+        return _FakeSession(self.serial, self.cfg['uboot']['prompt'])
 
     def cold_boot(self, boot_timeout=60):
         _pcalls.append('WAIT')
 
-    def quiet_boot(self, channel):
+    def quiet_boot(self):
         _pcalls.append('quiet')
 
 
@@ -181,8 +176,7 @@ _mincfg = {'name': 'fake', 'serial': {'url': '', 'timeout': 0.05},
            'uboot': {'prompt': 'soph#', 'load_addr': '0x80080000'}, 'power': {}}
 import contextlib, io as _io2  # noqa: E402
 
-with contextlib.redirect_stdout(_io2.StringIO()), \
-        _mock.patch.object(_runner, 'UbootSession', _FakeSession):
+with contextlib.redirect_stdout(_io2.StringIO()):
     ok, ended = _runner.Runner(_FakeBoard(_mincfg), 'watch-t',
                                {'exec': 'watch', 'reset_before': True,
                                 'after': 'none', 'timeout': 1.0,
