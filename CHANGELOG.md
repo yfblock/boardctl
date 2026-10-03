@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0 - 2026-10-03
+
+- **移除 tftp `method = "local"`(不兼容)**:boardctl 不再自建临时 TFTP
+  服务器(内置 `tftp_server.py` 随包删除)——文件就位只剩两种显式方式:
+  `remote`(scp 到远端 tftpd)与 `external`(本机常驻 tftpd,只落文件);
+  没有 tftpd 的场景用 `loady`(Ymodem 串口传输,免特权免服务器)。
+  配置残留 `local` 会得到迁移指引而非晦涩报错
+
 ## 0.10.0 - 2026-10-03
 
 - **CLI 引擎 cyclopts → google-fire**:Boardctl 类即命令面(方法即子命令),

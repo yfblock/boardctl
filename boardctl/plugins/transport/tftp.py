@@ -1,27 +1,19 @@
 """tftp 传输插件:设备端 tftpboot 拉取。文件就位方式由 [tftp].method 显式声明:
 remote   = scp 到远端 tftp 服务器;
 external = 本机已有常驻 tftpd(如 tftpd-hpa)服务 UDP 69,只把文件放进其
-           根目录即可——不探测端口、不建服务器、免特权;
-local    = boardctl 自建临时 tftp_server.py(UDP 69 需特权,退出自动回收)。
+           根目录即可——不探测端口、不建服务器、免特权。
 """
-import atexit
 import os
 import re
 import shutil
-import socket
 import subprocess
 import sys
-import time
 
 from ...session import UbootSession
 
 NAME = 'tftp'
 CFG_SECTION = 'tftp'
 DEFAULTS = {'method': 'remote', 'local_dir': 'tftpboot'}
-
-# 内置 TFTP 服务器随包分发(boardctl/tftp_server.py)
-_TFTP_SERVER = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)))), 'tftp_server.py')
 
 
 def _port_listeners(port, files=('/proc/net/udp', '/proc/net/udp6')):
@@ -43,24 +35,6 @@ def _port_listeners(port, files=('/proc/net/udp', '/proc/net/udp6')):
         except OSError:
             continue
     return found
-
-
-def udp69_state():
-    """探测本机 UDP 69 能否自建服务器:free / privileged / occupied。
-    占用判定优先读 /proc/net/udp:非 root 试绑特权端口只会得到 EACCES
-    (内核先查 CAP_NET_BIND_SERVICE 再查端口冲突),区分不出被占用。"""
-    if _port_listeners(69):
-        return 'occupied'
-    t = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        t.bind(('0.0.0.0', 69))
-    except PermissionError:
-        return 'privileged'
-    except OSError:
-        return 'occupied'
-    finally:
-        t.close()
-    return 'free'
 
 
 def _drop_into(local_dir, path, fname):
@@ -96,28 +70,12 @@ def _stage_file(cfg, path):
         if os.path.exists('/proc/net/udp') and not _port_listeners(69):
             print('警告: 本机未见 UDP 69 监听——常驻 tftpd 好像没在运行,设备拉取大概率失败',
                   file=sys.stderr, flush=True)
-    elif method == 'local':
-        # boardctl 自建临时 TFTP 服务器;探测只为快速失败,给出明确替代方案
-        state = udp69_state()
-        if state == 'occupied':
-            sys.exit('UDP 69 已被其他进程占用(常驻 tftpd?)。\n'
-                     '若它就是你的 TFTP 服务器,改 tftp.method = "external"'
-                     '(只落文件,免特权、不探测);\n'
-                     '若要 boardctl 自建服务器,先停掉占用者再试')
-        if state == 'privileged':
-            sys.exit('UDP 69 空闲,但 boardctl 自建 TFTP 服务器需要特权:\n'
-                     '先 `sudo -v`(凭证缓存约 15 分钟)再以 sudo 运行;\n'
-                     '或常驻一个 tftpd 改用 method = "external",或该目标 method = "loady"')
-        local_dir = os.path.abspath(t.get('local_dir', 'tftpboot'))
-        _drop_into(local_dir, path, fname)
-        # 临时拉起内置 TFTP 服务器,退出时一并回收
-        srv = subprocess.Popen(
-            [sys.executable, _TFTP_SERVER, local_dir],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        atexit.register(lambda: srv.poll() is None and srv.terminate())
-        time.sleep(0.5)
     else:
-        sys.exit(f'未知 tftp.method: {method}(可用: remote / external / local)')
+        if method == 'local':
+            sys.exit('tftp method="local"(boardctl 自建临时 TFTP 服务器)已移除:\n'
+                     '本机常驻 tftpd(如 tftpd-hpa)改用 method = "external";\n'
+                     '没有 tftpd 时,该目标改 method = "loady"(Ymodem 串口传输,免特权)')
+        sys.exit(f'未知 tftp.method: {method}(可用: remote / external)')
 
 
 def send(cfg, path, addr):

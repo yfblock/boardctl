@@ -194,8 +194,7 @@ except SystemExit as e:
 from boardctl import power  # noqa: E402,F401
 
 # 8. tftp 文件就位:external 只落文件、不探测不建服务器(已在根目录不自拷贝,
-#    SameFileError 回归);local 自建路径快速失败——被占用指引 external、
-#    无特权指引 sudo(占用判定读 /proc/net/udp,不受特权端口 EACCES 影响)
+#    SameFileError 回归);local 已移除——残留配置给迁移指引
 import tempfile  # noqa: E402
 from pathlib import Path  # noqa: E402
 
@@ -224,19 +223,13 @@ with tempfile.TemporaryDirectory() as td:
     _tftp._stage_file(cfg_x, str(outside))                # 异地:落盘进 tftp 根
     assert (root / 'elsewhere.bin').read_bytes() == b'OTHER'
 
-    # 8.3 local 自建:occupied → 指引 external;privileged → 指引 sudo
-    _orig_state = _tftp.udp69_state
+    # 8.3 local 已移除(不再自建 TFTP 服务器):残留配置报迁移指引
     cfg_l = {'tftp': {'method': 'local', 'local_dir': str(root)}}
     try:
-        for state, hint in (('occupied', 'external'), ('privileged', 'sudo')):
-            _tftp.udp69_state = lambda s=state: s
-            try:
-                _tftp._stage_file(cfg_l, str(root / 'hello.bin'))
-                raise AssertionError(f'{state} 应 sys.exit 退出')
-            except SystemExit as e:
-                assert hint in str(e), (state, e)
-    finally:
-        _tftp.udp69_state = _orig_state
+        _tftp._stage_file(cfg_l, str(root / 'hello.bin'))
+        raise AssertionError('method=local 应 sys.exit 退出(已移除)')
+    except SystemExit as e:
+        assert 'external' in str(e) and 'loady' in str(e), e
 
 # 9. 电源:mijia 开关量属性名可配(默认 on);power 子命令语义(on/off/status 经当前插件)
 from boardctl import power as _power_mod  # noqa: E402

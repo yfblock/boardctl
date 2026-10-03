@@ -31,10 +31,9 @@ off_cmd = "echo 'power off'"
 [tftp]
 method = "remote"                  # remote: scp 到远端 tftp 服务器
                                    # external: 本机已有常驻 tftpd(如 tftpd-hpa),只落文件免特权
-                                   # local: boardctl 自建临时服务器(UDP 69 需特权)
 ssh_host = "tftp-server"           # method=remote 时的 ssh 别名(~/.ssh/config)
 remote_dir = "/srv/tftp"
-local_dir = "tftpboot"             # external/local 时的 tftp 根目录
+local_dir = "tftpboot"             # external 时的 tftp 根目录
 
 [loady]
 sender = ""                        # Ymodem 发送器;空则自动查找(Arch: lrzsz-sb,Debian/Ubuntu: sb)

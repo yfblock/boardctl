@@ -53,7 +53,6 @@ boardctl -b myboard power off      # 手动关机(on 同理)
 | | `method = "command"` + `on_cmd`/`off_cmd`/`status_cmd` | 命令插件:任意开关机 shell 命令(经 ssh_host 决定本机/远端);method 未配置时默认即此 |
 | `[tftp]` | `method=remote` + `ssh_host`/`remote_dir` | scp 到远端 tftpd 服务器 |
 | | `method=external` + `local_dir` | **本机已有常驻 tftpd(如 tftpd-hpa)服务 UDP 69**:只把文件放进其根目录即可——不探测端口、不建服务器、免特权 |
-| | `method=local` + `local_dir` | boardctl 自建临时 TFTP 服务器(UDP 69 需特权,退出自动回收;69 被占/无特权时快速失败并提示改 external/loady) |
 | `[loady]` | `sender` | Ymodem 发送器(空则自动查找:Arch 为 `lrzsz-sb`,Debian/Ubuntu 为 `sb`) |
 | `[run.<名字>]` | `file` / `exec` / `method` / `timeout` | 启动目标(exec/method 即插件名) |
 | | `exec = "watch"` | 被动观察:板子自己完成传输与执行(bootcmd/自动脚本)时用——不传输、不发送任何命令(不允许 `file`),静默上电从第一个字节开始收流;断言与收尾与主动模式一致 |
