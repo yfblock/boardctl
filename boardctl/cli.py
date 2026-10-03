@@ -6,6 +6,7 @@ fire 的短旗标即去掉前导连字符的参数名)。fire 不做类型/取�
 power state 与 repeat 由本模块手工校验;板名 str() 兜底纯数字名被
 fire 字面量化成 int。
 """
+import functools
 import os
 import signal
 import sys
@@ -19,6 +20,10 @@ from .runner import do_run
 
 class _Interrupted(BaseException):
     """SIGTERM 等信号转成的可捕获中断"""
+
+
+def _on_signal(signum, _frame):
+    raise _Interrupted(f'signal {signum}')
 
 
 def _ensure_power_off(cfg):
@@ -35,45 +40,56 @@ def _ensure_power_off(cfg):
         print('[boardctl] 自动关机失败,请手动确认电源状态', file=sys.stderr)
 
 
-def _run_guarded(cfg, name, repeat):
-    """带打断关机保证的 run:Ctrl-C/SIGTERM/异常退出时若板开机则关机"""
-    def _on_signal(signum, _frame):
-        raise _Interrupted(f'signal {signum}')
+def _guarded(fn):
+    """打断关机保证(装饰子命令):Ctrl-C/SIGTERM/异常退出时若板开机则关机。
+    先落定板卡配置再装信号钩子——板卡解析阶段的退出不需要善后,
+    而善后本身要用 cfg(经 self.cfg 懒加载,与命令体内是同一份)"""
+    @functools.wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        cfg = self.cfg
+        old_term = signal.signal(signal.SIGTERM, _on_signal)
+        try:
+            return fn(self, *args, **kwargs)
+        except (KeyboardInterrupt, _Interrupted):
+            _ensure_power_off(cfg)
+            sys.exit(130)
+        except Exception:
+            _ensure_power_off(cfg)
+            raise
+        finally:
+            signal.signal(signal.SIGTERM, old_term)
+    return wrapper
 
-    old_term = signal.signal(signal.SIGTERM, _on_signal)
-    try:
-        do_run(cfg, name, repeat=repeat)
-    except (KeyboardInterrupt, _Interrupted):
-        _ensure_power_off(cfg)
-        sys.exit(130)
-    except Exception:
-        _ensure_power_off(cfg)
-        raise
-    finally:
-        signal.signal(signal.SIGTERM, old_term)
 
-
-def _pick_board(board):
-    """解析目标板卡:-b 指定;缺省且仅一块用户板(包内置示例不算)时自动选中"""
-    if board is None:
+def _board_name(raw):
+    """-b 原始值 → 板名:缺省且仅一块用户板(包内置示例不算)时自动选中"""
+    if raw is None:
         user_boards = {n: p for n, p in available_boards().items()
                        if not p.startswith(BUNDLED_BOARDS_DIR + os.sep)}
         if len(user_boards) == 1:
-            board = next(iter(user_boards))
-        else:
-            sys.exit('请用 -b 指定开发板,可用: '
-                     + (' '.join(sorted(user_boards)) or '(无;先在 ~/.config/boardctl/ 放配置)'))
-    return load_board(board)
+            return next(iter(user_boards))
+        sys.exit('请用 -b 指定开发板,可用: '
+                 + (' '.join(sorted(user_boards)) or '(无;先在 ~/.config/boardctl/ 放配置)'))
+    return raw
 
 
 class Boardctl:
     """开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),
-    板卡与启动目标配置见 ~/.config/boardctl,插件化传输/执行/电源"""
+    板卡与启动目标配置见 ~/.config/boardctl,插件化传输/电源/启动模式"""
 
     def __init__(self, board=None, b=None):
         got = b if b is not None else board
         self._board = str(got) if got is not None else None
+        self._cfg = None
 
+    @property
+    def cfg(self):
+        """目标板卡配置(懒加载一次):板名经 -b 或自动选板落定,即解析即加载"""
+        if self._cfg is None:
+            self._cfg = load_board(_board_name(self._board))
+        return self._cfg
+
+    @_guarded
     def run(self, name=None, repeat=1, r=None):
         """一键全流程启动(目标配置于 [run.<名字>];省略目标名则列出可用目标)
 
@@ -82,13 +98,13 @@ class Boardctl:
         repeat = r if r is not None else repeat
         if isinstance(repeat, bool) or not isinstance(repeat, int) or repeat < 1:
             sys.exit(f'--repeat/-r 须为正整数,收到: {repeat!r}')
-        _run_guarded(_pick_board(self._board), name, repeat)
+        do_run(self.cfg, name, repeat)
 
     def power(self, state):
         """电源控制(经电源插件:mijia/command):on 开机 / off 关机 / status 查询状态"""
         if state not in ('on', 'off', 'status'):
             sys.exit(f'无效 state {state!r},可选: on 开机 / off 关机 / status 查询状态')
-        cfg = _pick_board(self._board)
+        cfg = self.cfg
         p = power.Power(cfg)
         if state == 'status':
             val = p.status()
