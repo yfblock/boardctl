@@ -60,7 +60,7 @@ def ls_boards() -> str:
 @_tool_guard
 def power_status(board: str) -> str:
     """查询开发板电源状态(开/关);command 电源插件无法解析时返回"未知"。只读,无副作用。"""
-    val = power.power_status(load_board(board))
+    val = power.Power(load_board(board)).status()
     return '未知(该板的电源插件无法解析状态)' if val is None else ('开' if val else '关')
 
 

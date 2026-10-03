@@ -24,13 +24,14 @@ class _Interrupted(BaseException):
 def _ensure_power_off(cfg):
     """打断善后:板在开机状态则执行一次关机,保证程序结束后设备是关的"""
     print('\n[boardctl] 程序被打断,执行关机保证...', file=sys.stderr, flush=True)
+    p = power.Power(cfg)
     try:
-        state = power.power_status(cfg)
+        state = p.status()
     except SystemExit:
         state = None
     if state is False:
         return  # 本来就是关的
-    if not power.power_off(cfg, check=False):
+    if not p.off(check=False):
         print('[boardctl] 自动关机失败,请手动确认电源状态', file=sys.stderr)
 
 
@@ -88,10 +89,11 @@ class Boardctl:
         if state not in ('on', 'off', 'status'):
             sys.exit(f'无效 state {state!r},可选: on 开机 / off 关机 / status 查询状态')
         cfg = _pick_board(self._board)
+        p = power.Power(cfg)
         if state != 'status':
-            print(f'[{cfg["name"]}] 电源{"开机" if state == "on" else "关机"}'
-                  f'({power.method_desc(cfg)})', flush=True)
-        power.do_power(cfg, state)   # 内部完成动作并 exit(0)
+            print(f'[{cfg["name"]}] 电源{"开机" if state == "on" else "关机"}({p.desc})',
+                  flush=True)
+        p.apply(state)   # 内部完成动作并 exit(0)
 
     def ls(self):
         """列出开发板"""

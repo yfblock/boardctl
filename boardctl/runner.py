@@ -167,11 +167,11 @@ def _execute_target(cfg, name, t):
         try:
             if after == 'off':
                 print(f'[{name}] 断电收尾(after=off)', flush=True)
-                power.power_off(cfg)
+                power.Power(cfg).off()
                 print(f'[{name}] 已断电', flush=True)
             elif after == 'reset':
                 print(f'[{name}] 输出结束,重启回提示符(after=reset)', flush=True)
-                power.do_reset(cfg)
+                power.Power(cfg).reset()
         except Exception as e:   # 收尾失败不掩盖执行阶段的原始异常
             print(f'[{name}] 收尾(after={after})失败: {e}', file=sys.stderr, flush=True)
 

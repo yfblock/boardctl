@@ -257,8 +257,9 @@ with tempfile.TemporaryDirectory() as td:
     except SystemExit as e:
         assert 'external' in str(e) and 'loady' in str(e), e
 
-# 9. 电源:插件即类(PowerDevice 子类,多态同接口);mijia 开关量属性名
-#    可配(默认 on);power 子命令语义(on/off/status 经当前电源插件类)
+# 9. 电源:插件即类(PowerDevice 子类,多态同接口),域门面 Power 也是类
+#    (包住插件实例,统一错误包装);mijia 开关量属性名可配(默认 on);
+#    power 子命令语义(apply:on/off/status 经当前电源插件类)
 from boardctl import power as _power_mod  # noqa: E402
 from boardctl.plugins import POWER as _POWER_REG  # noqa: E402
 from boardctl.plugins.power import mijia as _mijia  # noqa: E402
@@ -294,15 +295,15 @@ try:
              'serial': {}, 'uboot': {}}
     for st, want in (('on', True), ('off', False)):
         try:
-            _power_mod.do_power(_fcfg, st)
-            raise AssertionError('do_power 完成 action 后应 exit(0)')
+            _power_mod.Power(_fcfg).apply(st)
+            raise AssertionError('apply 完成 action 后应 exit(0)')
         except SystemExit as e:
             assert e.code == 0, e.code
         assert _FakePowerPlugin.calls[-1] is want, _FakePowerPlugin.calls
     _FakePowerPlugin.state = False
     with contextlib.redirect_stdout(_io2.StringIO()) as _so:
         try:
-            _power_mod.do_power(_fcfg, 'status')
+            _power_mod.Power(_fcfg).apply('status')
         except SystemExit as e:
             assert e.code == 0, e.code
     assert _so.getvalue().strip() == '关', _so.getvalue()
@@ -310,7 +311,7 @@ finally:
     del _POWER_REG['fake']
 
 # 10. CLI 接线(google-fire):Boardctl 类方法即子命令,走 fire.Fire 真实入口,
-#     叶子打桩(do_run/板卡目录/do_power),不碰文件系统与硬件
+#     叶子打桩(do_run/板卡目录/Power 门面),不碰文件系统与硬件
 from boardctl import cli as _cli  # noqa: E402
 
 _runcalls = []
@@ -352,11 +353,24 @@ with _mock.patch.object(_cli, 'available_boards',
     except SystemExit as e:
         assert '请用 -b' in str(e.code), e.code
 
-# power 分发:state 与板卡配置送抵 do_power(on/off 前的提示行照打)
+# power 分发:state 与板卡配置送抵 Power.apply(on/off 前的提示行照打)
 _pcalls = []
+
+
+class _FakeCliPower:
+    """Power 门面桩:记录 apply 调用(板名 + state)"""
+
+    desc = '插件 fake'
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+
+    def apply(self, state):
+        _pcalls.append((self.cfg['name'], state))
+
+
 with _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}), \
-        _mock.patch.object(_cli.power, 'do_power',
-                           lambda cfg, st: _pcalls.append((cfg['name'], st))), \
+        _mock.patch.object(_cli.power, 'Power', _FakeCliPower), \
         contextlib.redirect_stdout(_io2.StringIO()):
     _cli.Boardctl(board='ex').power('off')                         # 直接调方法
     _cli.fire.Fire(_cli.Boardctl, ['-b', 'ex', 'power', 'off'])    # 经 fire

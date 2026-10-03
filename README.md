@@ -72,7 +72,7 @@ boardctl/
 ├── config.py     板卡 TOML 加载(不依赖其他模块)
 ├── serial.py     串口域:纯字节通道 + fd 借出(不依赖其他模块)
 ├── session.py    U-Boot 协议:在串口通道上收发命令 ← serial
-├── power.py      电源域:纯电源动作 on/off/status,绝不碰串口 ← plugins
+├── power.py      电源域:Power 门面包 PowerDevice 插件,纯 on/off/status,绝不碰串口 ← plugins
 ├── board.py      开发板域:冷启动/静默上电/会话工厂 ← power, session
 ├── shell.py      指令域:命令执行(本机/ssh)← config
 ├── runner.py     run 编排       ← board + plugins
