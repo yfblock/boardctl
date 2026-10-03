@@ -4,7 +4,7 @@
 TOML 配置,**模块化 + 插件化**架构——一键全流程(冷启动 → 传输 → 执行 → 断言 → 收尾),
 加传输/执行/电源方式只需在插件目录丢一个文件。
 
-- `run <目标>`:自动开机 → TFTP/Ymodem 传输 → `go`/`source`/`booti` 执行 →
+- `run <目标>`:自动开机 → TFTP/Ymodem 传输 → `cmd` 模板执行(`go {addr}`、`booti …`)→
   输出断言(PASS/FAIL)→ 自动关机;`--repeat N` 多轮压测
 - `power on|off|status`:手动电源控制/查询(经电源插件,run 全流程之外用)
 - 被动观察 `exec = "watch"`:板子自己跑自动流程(bootcmd/板上脚本)时,
@@ -54,7 +54,8 @@ boardctl -b myboard power off      # 手动关机(on 同理)
 | `[tftp]` | `method=remote` + `ssh_host`/`remote_dir` | scp 到远端 tftpd 服务器 |
 | | `method=external` + `local_dir` | **本机已有常驻 tftpd(如 tftpd-hpa)服务 UDP 69**:只把文件放进其根目录即可——不探测端口、不建服务器、免特权 |
 | `[loady]` | `sender` | Ymodem 发送器(空则自动查找:Arch 为 `lrzsz-sb`,Debian/Ubuntu 为 `sb`) |
-| `[run.<名字>]` | `file` / `exec` / `method` / `timeout` | 启动目标(exec/method 即插件名) |
+| `[run.<名字>]` | `file` / `cmd` / `method` / `timeout` | 启动目标(method 即传输插件名) |
+| | `cmd` | U-Boot 执行命令模板:`go {addr}`、`source {addr}`、`booti {addr} - {fdt}`;变量取本目标键(`{addr}`/`{entry}` 缺省 `uboot.load_addr`),缺变量报错指名;不写 = 只加载不执行;命令序列写在 .scr 里 `source` |
 | | `exec = "watch"` | 被动观察:板子自己完成传输与执行(bootcmd/自动脚本)时用——不传输、不发送任何命令(不允许 `file`),静默上电从第一个字节开始收流;断言与收尾与主动模式一致 |
 | | `addr` / `entry` | 加载地址 / 跳转执行地址;缺省都取 `uboot.load_addr`,加载与入口不同时分别指定 |
 | | `fdt` / `initrd` | booti 执行插件附加键:设备树地址(必需)/ initrd 地址(可选) |
@@ -75,18 +76,16 @@ boardctl/
 ├── runner.py     run 编排       ← 上述全部 + plugins
 └── plugins/      插件(目录约定自动发现,零注册代码)
     ├── transport/   传输插件:loady.py、tftp.py
-    ├── executors/   执行插件:go.py、source.py、none.py、booti.py、bootm.py、watch.py(被动观察)
     └── power/       电源插件:mijia.py(小米云)、command.py(命令,默认)
 ```
 
 **插件接口**(约定写在各 `__init__.py`;可选声明 `CFG_SECTION` + `DEFAULTS` 自带配置默认值,TOML 优先):
 
 - 传输插件:`NAME` + `send(cfg, path, addr) -> bool`
-- 执行插件:`NAME` + `build_cmd(addr, t) -> str | None`;可选声明 `PASSIVE = True`
-  走被动分支(不传输文件、零写入,`watch` 即此)
 - 电源插件:`NAME` + `set_power(cfg, on)` + `get_power(cfg) -> bool | None`
 
-新建插件 = 加一个文件,`[run].method`/`exec`/`[power].method` 立即可用,核心零改动。
+新建插件 = 加一个文件,`[run].method`/`[power].method` 立即可用,核心零改动
+(执行命令不是插件:它是 `[run].cmd` 配置模板,由 runner 展开)。
 
 ## MCP(让 Claude 等客户端直接操控开发板)
 

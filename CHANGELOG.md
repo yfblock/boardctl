@@ -7,6 +7,14 @@
   `remote`(scp 到远端 tftpd)与 `external`(本机常驻 tftpd,只落文件);
   没有 tftpd 的场景用 `loady`(Ymodem 串口传输,免特权免服务器)。
   配置残留 `local` 会得到迁移指引而非晦涩报错
+- **执行插件族退役,`exec` → `cmd` 模板(不兼容)**:执行命令回归配置数据——
+  `[run.<名>] cmd = "go {addr}"`。变量取本目标配置键(`{addr}`/`{entry}` 缺省
+  `uboot.load_addr`),缺变量报错指名;不写 `cmd` = 只加载(原 exec=none);
+  命令序列仍写 .scr 经 `source {addr}` 执行。`exec = "watch"` 保留(被动模式
+  是行为不是命令)。迁移映射:`go`→`cmd = "go {entry}"`、
+  `source`→`cmd = "source {entry}"`、`booti`→`cmd = "booti {entry} - {fdt}"`
+  (带 initrd 用 `{initrd}`)、`bootm`→`cmd = "bootm {entry} {initrd} {fdt}"`、
+  `none`→删除 exec 行
 
 ## 0.10.0 - 2026-10-03
 

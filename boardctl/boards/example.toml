@@ -43,7 +43,9 @@ desc = "示例:裸机程序(go 跳转)"
 file = "hello.bin"                 # 占位路径,替换为你的固件(相对项目根或绝对路径)
 addr = "0x80080000"                # 加载地址(缺省取 uboot.load_addr)
 # entry = "0x80080000"             # 跳转地址(缺省 = addr;加载与入口不同时分别指定)
-exec = "go"                        # go / source / booti / bootm / none(只加载)/ watch(被动观察)
+cmd = "go {addr}"                  # 执行命令模板:{addr}/{entry} 缺省取 uboot.load_addr,
+                                   # 其余变量取本目标键(fdt/initrd…);不写 = 只加载;
+                                   # 命令序列写进 .scr 后 cmd = "source {addr}"
 method = "tftp"                    # tftp / loady
 timeout = 10                       # 执行后收集输出的秒数
 reset_before = true                # 自动开机:关→开→等提示符(不依赖设备初始状态)
@@ -57,10 +59,10 @@ expect = ["BM-TEST-START"]         # 输出断言(子串);expect_re 正则版;fa
 # fail_linger = 2                           # fail_re 命中后继续收集输出的秒数(默认 2,
                                               # 让错误栈吐完整再断电;0 = 立即收)
 
-# 引导 Linux 内核示例(booti:file=Image,fdt 必需,initrd 可选):
+# 引导 Linux 内核示例(booti 原始 Image:fdt 必需,initrd 可选):
 # [run.kernel]
 # file = "Image"
-# exec = "booti"
+# cmd = "booti {addr} - {fdt}"     # 带 initrd:booti {addr} {initrd} {fdt}
 # fdt = "0x83000000"
 # initrd = "0x82000000"
 # reset_before = true

@@ -6,31 +6,32 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 from boardctl.config import BASE_DIR, available_boards, load_board
-from boardctl.plugins import EXECUTORS, POWER, TRANSPORT
+from boardctl.plugins import POWER, TRANSPORT
 
-# 1. 插件注册表齐全
+# 1. 插件注册表齐全(0.11.0 起执行插件族退役:执行命令回归 cmd 模板配置)
 assert {'loady', 'tftp'} <= set(TRANSPORT), TRANSPORT
-assert {'go', 'source', 'none', 'booti', 'bootm', 'watch'} <= set(EXECUTORS), EXECUTORS
 assert {'mijia', 'command'} <= set(POWER), POWER
 
-# 2. 执行插件命令构造(新接口 build_cmd(addr, t))
-assert EXECUTORS['go'].build_cmd('0x80080000') == 'go 0x80080000'
-assert EXECUTORS['source'].build_cmd('0x80080000', {}) == 'source 0x80080000'
-assert EXECUTORS['none'].build_cmd('0x80080000', {}) is None
-assert EXECUTORS['watch'].PASSIVE is True          # 被动标记:runner 零写入分支
-assert EXECUTORS['watch'].build_cmd('0x80080000', {}) is None
-assert EXECUTORS['bootm'].build_cmd('0x80080000', {}) == 'bootm 0x80080000'
-assert EXECUTORS['bootm'].build_cmd('0x80080000', {'initrd': '0x82000000', 'fdt': '0x83000000'}) \
-    == 'bootm 0x80080000 0x82000000 0x83000000'
-assert EXECUTORS['booti'].build_cmd('0x80080000', {'fdt': '0x83000000'}) \
+# 2. 执行命令模板 _expand_cmd(执行插件族已退役,命令回归配置数据):
+#    变量取本目标键,{addr}/{entry} 缺省 uboot.load_addr(entry 再缺省取 addr),
+#    未知变量报错指名
+from boardctl.runner import _expand_cmd  # noqa: E402
+
+_mc = {'uboot': {'load_addr': '0x80080000'}}
+assert _expand_cmd(_mc, 't', {'cmd': 'go {addr}'}) == 'go 0x80080000'
+assert _expand_cmd(_mc, 't', {'cmd': 'source {entry}'}) == 'source 0x80080000'
+assert _expand_cmd(_mc, 't', {'cmd': 'go {entry}', 'entry': '0x80090000'}) == 'go 0x80090000'
+assert _expand_cmd(_mc, 't', {'cmd': 'booti {addr} - {fdt}', 'fdt': '0x83000000'}) \
     == 'booti 0x80080000 - 0x83000000'
-assert EXECUTORS['booti'].build_cmd('0x80080000', {'fdt': '0x83000000', 'initrd': '0x82000000'}) \
-    == 'booti 0x80080000 0x82000000 0x83000000'
+assert _expand_cmd(_mc, 't', {'cmd': 'bootm {addr} {initrd} {fdt}',
+                              'initrd': '0x82000000', 'fdt': '0x83000000'}) \
+    == 'bootm 0x80080000 0x82000000 0x83000000'
+assert _expand_cmd(_mc, 't', {'cmd': 'echo {{not var}}'}) == 'echo {{not var}}'  # 非变量花括号原样
 try:
-    EXECUTORS['booti'].build_cmd('0x80080000', {})
-    raise AssertionError('booti 缺 fdt 应报错退出')
-except SystemExit:
-    pass
+    _expand_cmd(_mc, 't', {'cmd': 'booti {addr} - {fdt}'})
+    raise AssertionError('cmd 缺变量应报错退出')
+except SystemExit as e:
+    assert 'fdt' in str(e) and 'run.t' in str(e), e
 
 # 3. 断言引擎 evaluate(expect 子串 / expect_re 正则 / fail_re 禁止命中)
 from boardctl.runner import evaluate  # noqa: E402
@@ -185,10 +186,18 @@ except SystemExit as e:
 # 主动模式缺 file 给明确报错(此前是裸 KeyError)
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
-        _runner._execute_target(_mincfg, 'go-t', {'exec': 'go', 'after': 'none'})
+        _runner._execute_target(_mincfg, 'go-t', {'cmd': 'go {addr}', 'after': 'none'})
     raise AssertionError('主动模式缺 file 应报错')
 except SystemExit as e:
     assert 'file' in str(e.code), e.code
+
+# 残留旧式 exec(除 watch)→ 指引改 cmd 模板
+try:
+    with contextlib.redirect_stdout(_io2.StringIO()):
+        _runner._execute_target(_mincfg, 'go-t', {'exec': 'go', 'after': 'none'})
+    raise AssertionError('旧式 exec=go 应被拒绝')
+except SystemExit as e:
+    assert 'cmd' in str(e.code), e.code
 
 # 7. 电源语义层导入无误
 from boardctl import power  # noqa: E402,F401
