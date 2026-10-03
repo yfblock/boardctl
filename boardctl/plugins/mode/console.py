@@ -13,7 +13,8 @@ class ConsoleMode(RunMode):
     def __init__(self, cfg):
         self.cfg = cfg
 
-    def launch(self, board, name, t):
+    def launch(self, runner):
+        board, name, t = runner.board, runner.name, runner.t   # 该 runner 的对象数据
         for k in ('file', 'method', 'addr', 'entry'):
             if t.get(k):
                 sys.exit(f'run.{name}(mode=console)不认 {k}:控制台模式只执行命令,'

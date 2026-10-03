@@ -23,7 +23,8 @@ class UbootMode(RunMode):
     def __init__(self, cfg):
         self.cfg = cfg
 
-    def launch(self, board, name, t):
+    def launch(self, runner):
+        board, name, t = runner.board, runner.name, runner.t   # 该 runner 的对象数据
         cmdline = _expand(self.cfg, name, t) if t.get('cmd') else None
 
         if t.get('reset_before'):

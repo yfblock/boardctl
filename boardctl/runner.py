@@ -194,7 +194,7 @@ class Runner:
                 sys.exit(f'未知启动模式 {mode_name!r},可用: {" ".join(sorted(MODE)) or "(无)"}')
             timeout = float(t.get('timeout', 15))
             interactive = bool(t.get('interactive'))
-            ch, cmdline, done = mode(cfg).launch(self.board, name, t)
+            ch, cmdline, done = mode(cfg).launch(self)   # 特定对象 = 该目标的 runner
             if done is not None:   # launch 已自行收束(如 uboot 只加载不执行)
                 return True, done
             out, ended = _stream_run(ch, cmdline, self.board.prompt,

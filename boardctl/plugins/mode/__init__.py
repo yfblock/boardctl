@@ -4,8 +4,11 @@
   PLUGIN: RunMode 子类       # 插件类(子类自身声明 NAME)
 
 RunMode 子类约定:
-  __init__(self, cfg)                  # 板卡配置,各模式自取所需段
-  launch(self, board, name, t) -> (channel, cmdline, done)
+  __init__(self, cfg)                  # 板卡配置(全局信息,与 runner.cfg 同源)
+  launch(self, runner) -> (channel, cmdline, done)
+                                       # runner = 该目标的编排对象(一块板 ↔ 多个
+                                       # runner;board/cfg/name/t 都在其中)——
+                                       # 特定对象即对应 runner 的数据;
                                        # 校验目标字段 + 按模式上电/传输;
                                        # 返回流式引擎要用的 (板的串口通道, 待发命令);
                                        # cmdline=None 表示零写入被动收流(watch);
@@ -46,5 +49,5 @@ class RunMode(ABC):
     NAME = None            # 注册名(子类必填),对应 [run.*].mode
 
     @abstractmethod
-    def launch(self, board, name, t):
+    def launch(self, runner):
         """校验 + 上电 + 传输;返回 (channel, cmdline, done)"""

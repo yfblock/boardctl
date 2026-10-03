@@ -12,7 +12,8 @@ class WatchMode(RunMode):
     def __init__(self, cfg):
         self.cfg = cfg
 
-    def launch(self, board, name, t):
+    def launch(self, runner):
+        board, name, t = runner.board, runner.name, runner.t   # 该 runner 的对象数据
         for k in ('file', 'cmd'):
             if t.get(k):
                 sys.exit(f'run.{name}(mode=watch)为被动模式,不认 {k}'
