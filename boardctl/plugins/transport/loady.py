@@ -59,14 +59,15 @@ class LoadyTransport(Transport):
         tail, _ = s.read_until(s.prompt, 10)
         print(err.decode('utf-8', 'replace').strip())
         # 串口侧输出不重打:tap 已即捕即显(loady 回显在借出前落日志,
-        # Total Size 在 resume 后无缝接上——全程都在显示)
+        # Total Size 在 resume 后无缝接上——全程都在显示);成功不报告,
+        # 只有本地才有的知识(文件大小核对)或失败判定才开口
         m = re.search(r'Total Size\s*=\s*(0x[0-9a-fA-F]+|\d+)', tail)
         if m:
             size = int(m.group(1), 0)
             actual = os.path.getsize(path)
             ok = size == actual
-            print(f'loady {"OK" if ok else "大小不符"}: {size} 字节 -> {addr}'
-                  + ('' if ok else f'(本地 {actual})'))
+            if not ok:
+                print(f'loady 大小不符: 设备收到 {size} 字节(本地 {actual})')
             return ok
         print('loady 传输失败(未见 Total Size 报告)')
         return False

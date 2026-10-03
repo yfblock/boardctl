@@ -94,14 +94,15 @@ class TftpTransport(Transport):
         if self.cfg['uboot'].get('ensure_server_ip') and server_ip:
             s.cmd(f'setenv serverip {server_ip}')
         out, hit = s.cmd(f'tftpboot {addr} {fname}', timeout=60)
-        # 输出不重打:捕获事件上的显示回调(tap)已即捕即显(含回显与进度)
+        # 成功不报告:回显(tap 即捕即显)里已有 tftpboot 行与 Bytes transferred;
+        # 只有本地才有的知识(文件大小核对)或失败判定才开口
         m = re.search(r'Bytes transferred = (\d+)', out)
         if m:
             actual = os.path.getsize(path)
             size = int(m.group(1))
             ok = size == actual
-            print(f'tftp {"OK" if ok else "大小不符"}: {size} 字节 -> {addr} (server {server_ip})'
-                  + ('' if ok else f'(本地 {actual})'))
+            if not ok:
+                print(f'tftp 大小不符: 设备收到 {size} 字节(本地 {actual})')
             return ok
         print('tftp 传输失败(未见 Bytes transferred'
               + ('' if hit else ';等待提示符超时,输出是截断的') + ')')
