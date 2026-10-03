@@ -1,24 +1,20 @@
 """命令行入口:极简命令面——run(一键全流程)+ ls(列表)+ power(电源控制)
 
-cyclopts 注解式解析:全局 -b/--board 须经 meta 入口收下(置于子命令前,与旧
-argparse 行为一致),板卡配置在 meta 层解析一次,注入声明了 cfg 的子命令
-(Annotated[..., Parameter(parse=False)] 约定,经 parse_args 的 ignored 传递)。
+google-fire 驱动:Boardctl 类即命令面,方法即子命令。全局 -b/--board 经
+构造器参数收下(须置于子命令前,与历代版本一致;-b 是 board 的短别名,
+fire 的短旗标即去掉前导连字符的参数名)。fire 不做类型/取值校验,
+power state 与 repeat 由本模块手工校验;板名 str() 兜底纯数字名被
+fire 字面量化成 int。
 """
 import os
 import signal
 import sys
-from typing import Annotated, Literal
 
-import cyclopts
-from cyclopts import Parameter
+import fire
 
 from . import power
 from .config import BUNDLED_BOARDS_DIR, available_boards, load_board
 from .runner import do_run
-
-# result_action='return_value':命令成功时 app.meta() 正常返回而不是 sys.exit(0)
-# ——保持可嵌入(测试/程序化调用);成败退出码由命令自身 sys.exit 与错误路径负责
-app = cyclopts.App(name='boardctl', result_action='return_value')
 
 
 class _Interrupted(BaseException):
@@ -69,54 +65,45 @@ def _pick_board(board):
     return load_board(board)
 
 
-@app.meta.default
-def _launch(
-    *tokens: Annotated[str, Parameter(show=False, allow_leading_hyphen=True)],
-    board: Annotated[str | None,
-                     Parameter(name=['-b', '--board'],
-                               help='开发板名(缺省:仅一块用户板卡时自动选中)')] = None,
-):
+class Boardctl:
     """开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),
     板卡与启动目标配置见 ~/.config/boardctl,插件化传输/执行/电源"""
-    command, bound, ignored = app.parse_args(tokens)
-    extra = {}
-    if 'cfg' in ignored:                 # 仅声明了 cfg 的子命令才解析板卡(ls 不需要)
-        extra['cfg'] = _pick_board(board)
-    command(*bound.args, **bound.kwargs, **extra)
 
+    def __init__(self, board=None, b=None):
+        got = b if b is not None else board
+        self._board = str(got) if got is not None else None
 
-@app.command
-def run(name: Annotated[str | None, Parameter(help='启动目标名(省略则列出可用目标)')] = None,
-        repeat: Annotated[int, Parameter(name=['-r', '--repeat'],
-                                         help='重复轮数(>1 时每轮冷启动,结束汇总 PASS/FAIL)')] = 1,
-        *, cfg: Annotated[dict, Parameter(parse=False)]):
-    """一键全流程启动(目标配置于 [run.<名字>])"""
-    _run_guarded(cfg, name, repeat)
+    def run(self, name=None, repeat=1, r=None):
+        """一键全流程启动(目标配置于 [run.<名字>];省略目标名则列出可用目标)
 
+        repeat(--repeat/-r):重复轮数,>1 时每轮冷启动,结束汇总 PASS/FAIL
+        """
+        repeat = r if r is not None else repeat
+        if isinstance(repeat, bool) or not isinstance(repeat, int) or repeat < 1:
+            sys.exit(f'--repeat/-r 须为正整数,收到: {repeat!r}')
+        _run_guarded(_pick_board(self._board), name, repeat)
 
-@app.command
-def ls():
-    """列出开发板"""
-    boards = available_boards()
-    if not boards:
-        sys.exit('没有找到任何板卡配置。把板卡 TOML 放到 ~/.config/boardctl/\n'
-                 '(模板可参考包内置示例 boardctl/boards/),或用 $BOARDCTL_BOARDS 指定目录')
-    for name in sorted(boards):
-        cfg = load_board(name)
-        desc = f' — {cfg["description"]}' if cfg['description'] else ''
-        print(f'{cfg["name"]}{desc}')
+    def power(self, state):
+        """电源控制(经电源插件:mijia/command):on 开机 / off 关机 / status 查询状态"""
+        if state not in ('on', 'off', 'status'):
+            sys.exit(f'无效 state {state!r},可选: on 开机 / off 关机 / status 查询状态')
+        cfg = _pick_board(self._board)
+        if state != 'status':
+            print(f'[{cfg["name"]}] 电源{"开机" if state == "on" else "关机"}'
+                  f'({power.method_desc(cfg)})', flush=True)
+        power.do_power(cfg, state)   # 内部完成动作并 exit(0)
 
-
-@app.command(name='power')
-def power_ctl(state: Annotated[Literal['on', 'off', 'status'],
-                              Parameter(help='on 开机 / off 关机 / status 查询状态')],
-              *, cfg: Annotated[dict, Parameter(parse=False)]):
-    """电源控制(经电源插件:mijia/command)"""
-    if state != 'status':
-        print(f'[{cfg["name"]}] 电源{"开机" if state == "on" else "关机"}'
-              f'({power.method_desc(cfg)})', flush=True)
-    power.do_power(cfg, state)   # 内部完成动作并 exit(0)
+    def ls(self):
+        """列出开发板"""
+        boards = available_boards()
+        if not boards:
+            sys.exit('没有找到任何板卡配置。把板卡 TOML 放到 ~/.config/boardctl/\n'
+                     '(模板可参考包内置示例 boardctl/boards/),或用 $BOARDCTL_BOARDS 指定目录')
+        for name in sorted(boards):
+            cfg = load_board(name)
+            desc = f' — {cfg["description"]}' if cfg['description'] else ''
+            print(f'{cfg["name"]}{desc}')
 
 
 def main():
-    app.meta(sys.argv[1:])
+    fire.Fire(Boardctl)

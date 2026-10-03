@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0 - 2026-10-03
+
+- **CLI 引擎 cyclopts → google-fire**:Boardctl 类即命令面(方法即子命令),
+  命令面与用法完全不变(`-b 板名` 仍置于子命令前、`run <目标> -r N`、
+  `power on|off|status`、`ls`、无 `-b` 时单板自动选中);`sys.exit` 退出码
+  原样传播(0/1/130 语义不变)。依赖 cyclopts → fire(传递依赖 termcolor)。
+  差异:fire 不做参数校验,power state 与 repeat 改为本工具手工校验;
+  纯数字板名会被 fire 字面量化成 int,已兜底还原;帮助页格式变化
+- 修复 CI 测试两处脆断言(cyclopts 版本相关的退出码断言、
+  `$BOARDCTL_BOARDS` 目录替换语义的误断言——实为前置优先)
+
 ## 0.9.0 - 2026-10-01
 
 - **板卡配置目录去掉 `boards/` 子目录(不兼容)**:板卡 TOML 直接放

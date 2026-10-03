@@ -283,8 +283,8 @@ try:
 finally:
     del _POWER_REG['fake']
 
-# 10. CLI 接线(cyclopts):走真实入口 app.meta 分发,叶子打桩
-#     (do_run/板卡目录/do_power),不碰文件系统与硬件
+# 10. CLI 接线(google-fire):Boardctl 类方法即子命令,走 fire.Fire 真实入口,
+#     叶子打桩(do_run/板卡目录/do_power),不碰文件系统与硬件
 from boardctl import cli as _cli  # noqa: E402
 
 _runcalls = []
@@ -292,23 +292,36 @@ with _mock.patch.object(_cli, 'do_run',
                         lambda cfg, name, repeat=1: _runcalls.append((cfg['name'], name, repeat))), \
         _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/example.toml'}), \
         _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}):
-    # 全局 -b 前置于子命令 + 位置参数 + 短旗标 -r
-    _cli.app.meta(['-b', 'example', 'run', 'hello', '-r', '3'])
+    # 全局 -b 前置于子命令(构造器短别名)+ 位置参数 + 短旗标 -r
+    _cli.fire.Fire(_cli.Boardctl, ['-b', 'example', 'run', 'hello', '-r', '3'])
     assert _runcalls == [('example', 'hello', 3)], _runcalls
     # 缺省 -b:仅一块用户板时自动选中
     _runcalls.clear()
-    _cli.app.meta(['run', 'hello'])
+    _cli.fire.Fire(_cli.Boardctl, ['run', 'hello'])
     assert _runcalls == [('example', 'hello', 1)], _runcalls
     # 省略目标名 = 列出目标(do_run 收到 None)
     _runcalls.clear()
-    _cli.app.meta(['run'])
+    _cli.fire.Fire(_cli.Boardctl, ['run'])
     assert _runcalls == [('example', None, 1)], _runcalls
+    # 纯数字板名:fire 字面量化成 int,__init__ 的 str() 兜底还原
+    _runcalls.clear()
+    _cli.fire.Fire(_cli.Boardctl, ['-b', '2026', 'run', 'x'])
+    assert _runcalls == [('2026', 'x', 1)], _runcalls
+
+# repeat 手工校验(fire 不做类型校验)
+with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/e.toml'}), \
+        _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}):
+    try:
+        _cli.fire.Fire(_cli.Boardctl, ['run', 'hello', '-r', 'abc'])
+        raise AssertionError('非法 repeat 应被拒绝')
+    except SystemExit as e:
+        assert '正整数' in str(e.code), e.code
 
 # 多块用户板且未 -b:明确报错退出
 with _mock.patch.object(_cli, 'available_boards',
                         lambda: {'a': '/x/a.toml', 'b': '/x/b.toml'}):
     try:
-        _cli.app.meta(['run'])
+        _cli.fire.Fire(_cli.Boardctl, ['run'])
         raise AssertionError('多板未指定 -b 应报错退出')
     except SystemExit as e:
         assert '请用 -b' in str(e.code), e.code
@@ -319,40 +332,48 @@ with _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}),
         _mock.patch.object(_cli.power, 'do_power',
                            lambda cfg, st: _pcalls.append((cfg['name'], st))), \
         contextlib.redirect_stdout(_io2.StringIO()):
-    _cli.app.meta(['-b', 'ex', 'power', 'off'])
-assert _pcalls == [('ex', 'off')], _pcalls
+    _cli.Boardctl(board='ex').power('off')                         # 直接调方法
+    _cli.fire.Fire(_cli.Boardctl, ['-b', 'ex', 'power', 'off'])    # 经 fire
+assert _pcalls == [('ex', 'off'), ('ex', 'off')], _pcalls
 
-# power 非法 state:Literal 校验拒绝
-try:
-    _cli.app.meta(['power', 'bogus'])
-    raise AssertionError('非法 power state 应被拒绝')
-except SystemExit as e:
-    assert e.code == 1, e.code
+# power 非法 state:手工校验拒绝(fire 无 Literal 校验)
+with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/e.toml'}):
+    try:
+        _cli.fire.Fire(_cli.Boardctl, ['power', 'bogus'])
+        raise AssertionError('非法 power state 应被拒绝')
+    except SystemExit as e:
+        assert '无效 state' in str(e.code), e.code
 
 # ls 分发
 with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/example.toml'}), \
         _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'description': '示例'}):
     with contextlib.redirect_stdout(_io2.StringIO()) as _so:
-        _cli.app.meta(['ls'])
+        _cli.fire.Fire(_cli.Boardctl, ['ls'])
 assert 'example' in _so.getvalue(), _so.getvalue()
 
-# 无参数:打印帮助,退出码 0
+# 无参数:打印组件帮助,正常返回或退出码 0
 with contextlib.redirect_stdout(_io2.StringIO()) as _so:
     try:
-        _cli.app.meta([])
+        _cli.fire.Fire(_cli.Boardctl, [])
     except SystemExit as e:
-        assert e.code == 0, e.code
-assert 'run' in _so.getvalue(), _so.getvalue()
+        assert e.code in (0, None), e.code
+assert 'SYNOPSIS' in _so.getvalue(), _so.getvalue()
 
 # 11. 板卡配置目录:board_dir 直接放 *.toml(~/.config/boardctl,无 boards/ 子目录);
-#     $BOARDCTL_BOARDS 指向的目录里直接放 toml 即被发现,加载照常合并默认值
+#     $BOARDCTL_BOARDS 指向的目录里直放 toml 即被发现且优先(同名先到先得,
+#     不替换后续目录),加载照常合并默认值
 with tempfile.TemporaryDirectory() as _td:
     (Path(_td) / 'x.toml').write_text('description = "t"\n[serial]\nurl = "socket://h:1"\n',
                                       encoding='utf-8')
+    (Path(_td) / 'example.toml').write_text('description = "覆盖同名内置示例"\n',
+                                            encoding='utf-8')
     (Path(_td) / 'ignored.txt').write_text('not a board', encoding='utf-8')
     os.environ['BOARDCTL_BOARDS'] = _td
     try:
-        assert available_boards() == {'x': str(Path(_td) / 'x.toml')}, available_boards()
+        _boards = available_boards()
+        assert _boards['x'] == str(Path(_td) / 'x.toml'), _boards
+        assert _boards['example'] == str(Path(_td) / 'example.toml'), _boards  # 先到先得
+        assert 'ignored.txt' not in _boards
         _c = load_board('x')
         assert _c['serial']['url'] == 'socket://h:1'
         assert _c['uboot']['prompt'] == '=>'       # DEFAULTS 照常合并

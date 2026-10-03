@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "boardctl"
-version = "0.9.0"
+version = "0.10.0"
 description = "开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),插件化传输/执行/电源,板卡配置于 ~/.config/boardctl"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-dependencies = ["pyserial>=3.5", "cyclopts>=4.0"]
+dependencies = ["pyserial>=3.5", "fire>=0.7"]
 
 [project.optional-dependencies]
 mijia = ["mijiaapi>=4"]   # 电源插件 boardctl.plugins.power.mijia 需要(懒加载,未装不影响其他功能)
