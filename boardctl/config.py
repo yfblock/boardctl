@@ -47,9 +47,8 @@ def available_boards():
     """全部可用板卡名(按目录优先级去重,先出现的优先)"""
     names = {}
     for d in boards_dirs():
-        for f in sorted(os.listdir(d)):
-            if f.endswith('.toml'):
-                names.setdefault(f[:-5], os.path.join(d, f))
+        for p in sorted(Path(d).glob('*.toml')):
+            names.setdefault(p.stem, str(p))
     return names
 
 
