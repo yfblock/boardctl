@@ -1,26 +1,21 @@
-"""板卡配置加载:board_dir(~/.config/boardctl)下的 *.toml + 默认值合并(TOML 同名键覆盖)"""
+"""板卡配置:目录发现(boards_dirs/available_boards)+ 加载(load_board)。
+加载 = toml 解析 → 旧式写法归一 → msgspec 建模校验(schema.py 声明形状
+与核心默认值;拼错的键/类型/枚举错误在此当场报出)→ 剥 None(缺省即
+缺省)→ 插件段默认值合并(各插件 DEFAULTS 声明,TOML 值优先)。"""
 import os
 import sys
 import tomllib
 from pathlib import Path
+
+import msgspec
+
+from . import schema
 
 # 项目根目录(本包的上一级):开发运行时 boards/、run.sh 等在这里
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 随包分发的示例板卡目录(仅作模板兜底,优先级最低)
 BUNDLED_BOARDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'boards')
-
-# 全局默认值(仅真正跨模块的段;插件自己的默认值由插件类的 DEFAULTS 提供)
-DEFAULTS = {
-    'serial': {'url': 'socket://localhost:5000', 'timeout': 0.2},
-    'console': {'prompt': '=>'},    # 控制台提示符(U-Boot/Linux shell/其他 CLI 皆可)
-    'uboot': {                      # U-Boot 特有:加载地址/网络,由 cmd 模板与传输插件取用
-        'load_addr': '0x80080000',
-        'ip_addr': '',
-        'server_ip': '',
-        'ensure_server_ip': False,
-    },
-}
 
 
 def boards_dirs():
@@ -52,26 +47,48 @@ def available_boards():
     return names
 
 
+def _normalize(data):
+    """旧式写法归一(建模校验之前,让历史配置以新形状过验):
+    - prompt 原住在 [uboot],现归 [console]:无 [console] 段时继承,老配置零改动
+    - 断言键(expect/expect_re/fail_re)标量写法包成列表
+    """
+    if 'console' not in data:
+        p = data.get('uboot', {}).get('prompt')
+        if p is not None:
+            data.setdefault('console', {})['prompt'] = p
+    for t in data.get('run', {}).values():
+        if isinstance(t, dict):
+            for k in ('expect', 'expect_re', 'fail_re'):
+                if isinstance(t.get(k), str):
+                    t[k] = [t[k]]
+    return data
+
+
+def _strip_none(o):
+    """剥除 None 值(建模会把可缺省字段实体化成 None;剥掉 = 缺省即缺省,
+    消费端的 t.get('after') 等缺省逻辑行为不变)"""
+    if isinstance(o, dict):
+        return {k: _strip_none(v) for k, v in o.items() if v is not None}
+    if isinstance(o, list):
+        return [_strip_none(v) for v in o]
+    return o
+
+
 def load_board(name):
     boards = available_boards()
     if name not in boards:
         sys.exit(f"未知开发板 {name!r},可用: {' '.join(sorted(boards)) or '(配置目录里没有任何板卡)'}")
     with open(boards[name], 'rb') as f:
-        data = tomllib.load(f)
-    cfg = {'name': name, 'description': data.get('description', ''),
-           'ssh_host': data.get('ssh_host', '')}
-    for section, defaults in DEFAULTS.items():
-        cfg[section] = {**defaults, **data.get(section, {})}
-    cfg['power'] = dict(data.get('power', {}))
-    cfg['tftp'] = dict(data.get('tftp', {}))
-    cfg['run'] = data.get('run', {})
+        data = _normalize(tomllib.load(f))
+    data['name'] = name
+    try:
+        modeled = msgspec.convert(data, schema.BoardCfg, strict=False)
+    except msgspec.ValidationError as e:
+        sys.exit(f'板卡 {name} 配置无效({boards[name]}):\n{e}')
+    cfg = _strip_none(msgspec.to_builtins(modeled))
 
-    # 旧配置兼容:prompt 原住在 [uboot];控制台不一定姓 U-Boot,现归 [console]。
-    # 无 [console] 段时提示符继承 [uboot].prompt,老配置零改动可用
-    if 'console' not in data and 'prompt' in cfg['uboot']:
-        cfg['console']['prompt'] = cfg['uboot']['prompt']
-
-    # 插件自带默认值:按插件类的 CFG_SECTION 声明合并(TOML 值优先)。
+    # 插件自带默认值:按插件类的 CFG_SECTION 声明合并(TOML 值优先;
+    # 用户段已在 cfg 里——含 [loady] 等此前的种子遗漏,现经建模统一带入)。
     # 函数内 import,避免 config <-> plugins 模块级循环依赖
     from .plugins import all_plugins
     for plugin in all_plugins():

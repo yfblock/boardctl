@@ -628,4 +628,39 @@ with tempfile.TemporaryDirectory() as _td:
     finally:
         os.environ.pop('BOARDCTL_BOARDS', None)
 
+# 12. 配置建模(msgspec):加载即校验——拼错的键/非法枚举/类型/约束当场
+#     报错且带字段路径;断言标量归一成列表;缺省即缺省(None 剥除,消费端
+#     默认逻辑不变);插件段用户值真正到达(修 [loady] 从未被种子的静默丢失)
+with tempfile.TemporaryDirectory() as _td:
+    os.environ['BOARDCTL_BOARDS'] = _td
+    try:
+        def _toml(body):
+            (Path(_td) / 'm.toml').write_text(body, encoding='utf-8')
+
+        _toml('[run.h]\nexpect = "X"\ntimeout = 8\n')
+        _c = load_board('m')
+        assert _c['run']['h']['expect'] == ['X'], _c['run']['h']       # 标量包列表
+        assert _c['run']['h']['timeout'] == 8.0                         # int→float 强转
+        assert 'after' not in _c['run']['h'], _c['run']['h']            # 缺省即缺省
+        assert 'cmd' not in _c['run']['h']
+
+        _toml('[loady]\nsender = "/opt/sb"\n')
+        assert load_board('m')['loady'] == {'sender': '/opt/sb'}        # 用户值不再被 DEFAULTS 埋没
+
+        for _body, _why in [
+            ('[run.h]\nexpcet = ["X"]\n', '拼错的键'),
+            ('[run.h]\nafter = "reboot"\n', '非法枚举'),
+            ('[serial]\ntimeout = "abc"\n', '类型错误'),
+            ('[run.h]\ntimeout = -5\n', '负超时'),
+            ('[serial]\nurll = "x"\n', '核心段未知键'),
+        ]:
+            _toml(_body)
+            try:
+                load_board('m')
+                raise AssertionError(f'{_why}应被拒绝')
+            except SystemExit as _e:
+                assert '配置无效' in str(_e), _e
+    finally:
+        os.environ.pop('BOARDCTL_BOARDS', None)
+
 print('software tests: OK')
