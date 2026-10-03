@@ -137,7 +137,7 @@ ser = _FakeSer([])
 out, ended = _stream(ser, {}, cmd=None, timeout=0.2)
 assert ended == 'timeout' and ser.written == b'', (ended, ser.written)
 
-# 被动目标整链路(_execute_target):exec=watch 走静默上电分支
+# 被动目标整链路(Runner.run):exec=watch 走静默上电分支
 # (不碰 Board.cold_boot——那个会发 Ctrl-C)、全程零写入、断言照常
 import unittest.mock as _mock  # noqa: E402
 
@@ -164,10 +164,11 @@ class _FakeSession:
 
 
 class _FakeBoard:
-    """Board 桩:记录冷启动走的是哪条路径"""
+    """Board 桩:记录冷启动走的是哪条路径(after=none 时 power 不触)"""
 
     def __init__(self, cfg):
-        pass
+        self.cfg = cfg
+        self.power = None
 
     def cold_boot(self, boot_timeout=60):
         _pcalls.append('WAIT')
@@ -181,12 +182,11 @@ _mincfg = {'name': 'fake', 'serial': {'url': '', 'timeout': 0.05},
 import contextlib, io as _io2  # noqa: E402
 
 with contextlib.redirect_stdout(_io2.StringIO()), \
-        _mock.patch.object(_runner, 'UbootSession', _FakeSession), \
-        _mock.patch.object(_runner, 'Board', _FakeBoard):
-    ok, ended = _runner._execute_target(_mincfg, 'watch-t',
-                                        {'exec': 'watch', 'reset_before': True,
-                                         'after': 'none', 'timeout': 1.0,
-                                         'expect': ['TEST_RUNNER_DONE']})
+        _mock.patch.object(_runner, 'UbootSession', _FakeSession):
+    ok, ended = _runner.Runner(_FakeBoard(_mincfg), 'watch-t',
+                               {'exec': 'watch', 'reset_before': True,
+                                'after': 'none', 'timeout': 1.0,
+                                'expect': ['TEST_RUNNER_DONE']}).run()
 # 被动整链路:expect 一命中即收工(matched,不等提示符——与主动模式一致)
 assert ok and ended == 'matched' and _pcalls == ['quiet'], (ok, ended, _pcalls)
 assert _wser.written == b'', _wser.written   # 整链路零写入
@@ -194,8 +194,8 @@ assert _wser.written == b'', _wser.written   # 整链路零写入
 # 被动模式拒绝 file(板子自己获取,传了必是配错)
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
-        _runner._execute_target(_mincfg, 'watch-t',
-                                {'exec': 'watch', 'file': 'hello.bin', 'after': 'none'})
+        _runner.Runner(_FakeBoard(_mincfg), 'watch-t',
+                       {'exec': 'watch', 'file': 'hello.bin', 'after': 'none'}).run()
     raise AssertionError('watch 带 file 应被拒绝')
 except SystemExit as e:
     assert 'file' in str(e.code), e.code
@@ -203,7 +203,8 @@ except SystemExit as e:
 # 主动模式缺 file 给明确报错(此前是裸 KeyError)
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
-        _runner._execute_target(_mincfg, 'go-t', {'cmd': 'go {addr}', 'after': 'none'})
+        _runner.Runner(_FakeBoard(_mincfg), 'go-t',
+                       {'cmd': 'go {addr}', 'after': 'none'}).run()
     raise AssertionError('主动模式缺 file 应报错')
 except SystemExit as e:
     assert 'file' in str(e.code), e.code
@@ -211,7 +212,8 @@ except SystemExit as e:
 # 残留旧式 exec(除 watch)→ 指引改 cmd 模板
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
-        _runner._execute_target(_mincfg, 'go-t', {'exec': 'go', 'after': 'none'})
+        _runner.Runner(_FakeBoard(_mincfg), 'go-t',
+                       {'exec': 'go', 'after': 'none'}).run()
     raise AssertionError('旧式 exec=go 应被拒绝')
 except SystemExit as e:
     assert 'cmd' in str(e.code), e.code

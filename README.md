@@ -75,7 +75,7 @@ boardctl/
 ├── power.py      电源域:Power 门面包 PowerDevice 插件,纯 on/off/status,绝不碰串口 ← plugins
 ├── board.py      开发板域:冷启动/静默上电/会话工厂 ← power, session
 ├── shell.py      指令域:命令执行(本机/ssh)← config
-├── runner.py     run 编排       ← board + plugins
+├── runner.py     run 编排域:Runner(一块板 ↔ 多个 runner)← board + plugins
 └── plugins/      插件即类(目录约定自动发现,零注册代码)
     ├── transport/   传输插件:loady.py、tftp.py(Transport 子类)
     └── power/       电源插件:mijia.py(小米云)、command.py(命令,默认)

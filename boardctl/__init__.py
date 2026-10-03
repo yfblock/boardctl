@@ -7,7 +7,7 @@
   session.py   U-Boot 协议:在串口通道上收发命令(依赖 serial)
   board.py     开发板域:冷启动/静默上电/会话工厂,组合电源+串口(依赖 power, session)
   config.py    板卡 TOML 加载(不依赖其他模块)
-  runner.py    run 编排:传输/执行/断言/收尾(依赖 board + plugins)
+  runner.py    run 编排域:Runner,一块板 ↔ 多个 runner(依赖 board + plugins)
   cli.py       命令行入口,只做接线(google-fire)
   mcp_server.py MCP server(依赖 runner)
   plugins/     插件,两族:transport(传输)、power(电源)——插件即类,

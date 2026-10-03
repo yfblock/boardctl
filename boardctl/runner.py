@@ -1,6 +1,9 @@
-"""run 编排:冷启动 -> 传输(插件) -> 执行(cmd 模板,流式) -> 断言 -> 收尾;
-repeat > 1 时循环多轮(每轮冷启动)并汇总 PASS/FAIL。
-CLI(do_run)实时打印;程序化调用用 run_collect(捕获输出,返回结构化结果)"""
+"""run 编排域:Runner 单轮全流程(冷启动 -> 传输 -> 执行 -> 断言 -> 收尾);
+一块板(Board)对应多个 runner——每个 [run.<名>] 目标一个,repeat > 1 时
+同一 runner 复跑多轮并汇总。CLI(do_run)实时打印;程序化调用用
+run_collect(捕获输出,返回结构化结果)。
+流式引擎(_stream_run)/断言引擎(evaluate)/cmd 模板展开(_expand_cmd)
+是无状态纯函数,不进类。"""
 import codecs
 import contextlib
 import io
@@ -10,7 +13,6 @@ import select
 import sys
 import time
 
-from . import power
 from .board import Board
 from .config import BASE_DIR
 from .plugins import TRANSPORT
@@ -154,96 +156,111 @@ def evaluate(out, t):
     return (not problems), '; '.join(problems), checked
 
 
-def _execute_target(cfg, name, t):
-    """执行单轮:冷启动 -> 传输 -> 执行 -> 断言 -> 收尾。
-    被动模式(exec=watch)跳过传输与执行:静默上电 -> 零写入被动收流,
-    断言与收尾逻辑共用。收尾(after)放 finally:传输失败、插件 sys.exit、
-    异常退出同样执行(after=none 语义不变:保持现状);
-    返回 (expect 判定 bool, 结束原因);未配置断言时 bool 恒 True;
-    基础设施错误直接退出。"""
-    def _finish():
+class Runner:
+    """单轮 run 编排:冷启动 -> 传输(插件) -> 执行(cmd 模板,流式) -> 断言 -> 收尾。
+
+    一块板(Board)对应多个 runner——每个 [run.<名>] 目标一个;runner 持有
+    板:开机/静默上电/会话经板域,断电收尾经板上的电源域对象(board.power)。
+    依赖方向:runner(编排)-> board(板域)-> {power, session/serial}。"""
+
+    def __init__(self, board, name, t):
+        self.board = board
+        self.cfg = board.cfg
+        self.name = name
+        self.t = t
+
+    def _finish(self):
         # 收尾:off 断电 | reset 重启回提示符 | none 保持现状(兼容旧的 reset_after 布尔)
+        t, name = self.t, self.name
         after = t.get('after', 'reset' if t.get('reset_after') else 'none')
         try:
             if after == 'off':
                 print(f'[{name}] 断电收尾(after=off)', flush=True)
-                power.Power(cfg).off()
+                self.board.power.off()
                 print(f'[{name}] 已断电', flush=True)
             elif after == 'reset':
                 print(f'[{name}] 输出结束,重启回提示符(after=reset)', flush=True)
-                power.Power(cfg).reset()
+                self.board.power.reset()
         except Exception as e:   # 收尾失败不掩盖执行阶段的原始异常
             print(f'[{name}] 收尾(after={after})失败: {e}', file=sys.stderr, flush=True)
 
-    try:
-        exec_mode = t.get('exec')
-        if exec_mode is not None and exec_mode != 'watch':
-            sys.exit(f'无效 exec: {exec_mode!r}(0.11.0 起执行命令改配 cmd 模板,'
-                     '如 cmd = "go {addr}";exec 仅保留 "watch" 被动模式)')
-        cmdline = _expand_cmd(cfg, name, t) if t.get('cmd') else None
-        if exec_mode == 'watch' and cmdline is not None:
-            sys.exit('exec=watch 为被动模式,不执行命令——去掉 cmd 配置')
+    def run(self):
+        """执行单轮:冷启动 -> 传输 -> 执行 -> 断言 -> 收尾。
+        被动模式(exec=watch)跳过传输与执行:静默上电 -> 零写入被动收流,
+        断言与收尾逻辑共用。收尾(after)放 finally:传输失败、插件 sys.exit、
+        异常退出同样执行(after=none 语义不变:保持现状);
+        返回 (expect 判定 bool, 结束原因);未配置断言时 bool 恒 True;
+        基础设施错误直接退出。"""
+        cfg, name, t = self.cfg, self.name, self.t
+        try:
+            exec_mode = t.get('exec')
+            if exec_mode is not None and exec_mode != 'watch':
+                sys.exit(f'无效 exec: {exec_mode!r}(0.11.0 起执行命令改配 cmd 模板,'
+                         '如 cmd = "go {addr}";exec 仅保留 "watch" 被动模式)')
+            cmdline = _expand_cmd(cfg, name, t) if t.get('cmd') else None
+            if exec_mode == 'watch' and cmdline is not None:
+                sys.exit('exec=watch 为被动模式,不执行命令——去掉 cmd 配置')
 
-        if exec_mode == 'watch':
-            # 被动模式(watch):板子自己完成传输与执行(bootcmd/自动脚本),
-            # boardctl 全程零写入——不发 loady/tftpboot/go,连冷启动等提示符的
-            # Ctrl-C 都不能发(会打断板上自动流程)。串口先挂好再上电,
-            # 从启动输出的第一个字节开始收
-            if t.get('file'):
-                sys.exit(f'exec={exec_mode} 为被动模式,不传输文件(板子自行获取)——去掉 file 配置')
-            timeout = float(t.get('timeout', 15))
-            interactive = bool(t.get('interactive'))
-            with UbootSession.from_cfg(cfg) as s:
+            if exec_mode == 'watch':
+                # 被动模式(watch):板子自己完成传输与执行(bootcmd/自动脚本),
+                # boardctl 全程零写入——不发 loady/tftpboot/go,连冷启动等提示符的
+                # Ctrl-C 都不能发(会打断板上自动流程)。串口先挂好再上电,
+                # 从启动输出的第一个字节开始收
+                if t.get('file'):
+                    sys.exit(f'exec={exec_mode} 为被动模式,不传输文件(板子自行获取)——去掉 file 配置')
+                timeout = float(t.get('timeout', 15))
+                interactive = bool(t.get('interactive'))
+                with UbootSession.from_cfg(cfg) as s:
+                    if t.get('reset_before'):
+                        print(f'[{name}] 冷启动(静默:断电->上电,不写串口)', flush=True)
+                        self.board.quiet_boot(s.channel)
+                    print(f'[{name}] 被动观察(exec={exec_mode}:不发送任何命令)', flush=True)
+                    out, ended = _stream_run(s.channel, None, cfg['uboot']['prompt'],
+                                             t, interactive, timeout)
+            else:
                 if t.get('reset_before'):
-                    print(f'[{name}] 冷启动(静默:断电->上电,不写串口)', flush=True)
-                    Board(cfg).quiet_boot(s.channel)
-                print(f'[{name}] 被动观察(exec={exec_mode}:不发送任何命令)', flush=True)
-                out, ended = _stream_run(s.channel, None, cfg['uboot']['prompt'],
-                                         t, interactive, timeout)
-        else:
-            if t.get('reset_before'):
-                print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
-                Board(cfg).cold_boot()
+                    print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
+                    self.board.cold_boot()
 
-            if 'file' not in t:
-                sys.exit('该目标需要配置 file(仅 exec="watch" 被动模式可省略)')
-            path = t['file']
-            if not os.path.isabs(path):
-                path = os.path.join(BASE_DIR, path)
-            if not os.path.isfile(path):
-                sys.exit(f'文件不存在: {path}(先构建?)')
-            addr = t.get('addr', cfg['uboot']['load_addr'])   # 加载地址(跳转地址 {entry} 由 cmd 模板取)
-            method = t.get('method', 'tftp')
-            transport = TRANSPORT.get(method)
-            if transport is None:
-                sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
+                if 'file' not in t:
+                    sys.exit('该目标需要配置 file(仅 exec="watch" 被动模式可省略)')
+                path = t['file']
+                if not os.path.isabs(path):
+                    path = os.path.join(BASE_DIR, path)
+                if not os.path.isfile(path):
+                    sys.exit(f'文件不存在: {path}(先构建?)')
+                addr = t.get('addr', cfg['uboot']['load_addr'])   # 加载地址(跳转地址 {entry} 由 cmd 模板取)
+                method = t.get('method', 'tftp')
+                transport = TRANSPORT.get(method)
+                if transport is None:
+                    sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
 
-            print(f'[{name}] 传输 {t["file"]} ({method}) -> {addr}', flush=True)
-            if not transport(cfg).send(path, addr):
-                sys.exit(1)
+                print(f'[{name}] 传输 {t["file"]} ({method}) -> {addr}', flush=True)
+                if not transport(cfg).send(path, addr):
+                    sys.exit(1)
 
-            if cmdline is None:
-                print(f'[{name}] 已加载到 {addr}(未配置 cmd,不执行)')
-                return True, 'loaded'
+                if cmdline is None:
+                    print(f'[{name}] 已加载到 {addr}(未配置 cmd,不执行)')
+                    return True, 'loaded'
 
-            timeout = float(t.get('timeout', 15))
-            interactive = bool(t.get('interactive'))
-            print(f'[{name}] 执行: {cmdline}', flush=True)
-            with UbootSession.from_cfg(cfg) as s:
-                ok, _ = s.wait_prompt()
-                if not ok:
-                    sys.exit('等待 U-Boot 提示符超时')
-                out, ended = _stream_run(s.channel, cmdline, cfg['uboot']['prompt'],
-                                         t, interactive, timeout)
-        print(f'[{name}] 执行结束({ended})', flush=True)
+                timeout = float(t.get('timeout', 15))
+                interactive = bool(t.get('interactive'))
+                print(f'[{name}] 执行: {cmdline}', flush=True)
+                with UbootSession.from_cfg(cfg) as s:
+                    ok, _ = s.wait_prompt()
+                    if not ok:
+                        sys.exit('等待 U-Boot 提示符超时')
+                    out, ended = _stream_run(s.channel, cmdline, cfg['uboot']['prompt'],
+                                             t, interactive, timeout)
+            print(f'[{name}] 执行结束({ended})', flush=True)
 
-        ok, detail, checked = evaluate(out, t)
-        if checked:
-            print(f'[{name}] 结果: {"PASS" if ok else "FAIL"}' + (f'({detail})' if detail else ''),
-                  flush=True)
-        return (ok if checked else True), ended
-    finally:
-        _finish()
+            ok, detail, checked = evaluate(out, t)
+            if checked:
+                print(f'[{name}] 结果: {"PASS" if ok else "FAIL"}' + (f'({detail})' if detail else ''),
+                      flush=True)
+            return (ok if checked else True), ended
+        finally:
+            self._finish()
 
 
 def do_run(cfg, name, repeat=1):
@@ -267,11 +284,13 @@ def do_run(cfg, name, repeat=1):
         print(f'[{name}] repeat>1,自动启用 reset_before(每轮冷启动)', flush=True)
         t['reset_before'] = True
 
+    board = Board(cfg)
+    runner = Runner(board, name, t)   # 一块板 ↔ 多个 runner(每目标一个)
     results = []
     for i in range(1, total + 1):
         if total > 1:
             print(f'===== 第 {i}/{total} 轮 =====', flush=True)
-        results.append(_execute_target(cfg, name, t)[0])
+        results.append(runner.run()[0])
 
     if total > 1:
         p = sum(1 for r in results if r)
@@ -292,13 +311,15 @@ def run_collect(cfg, name, repeat=1, tail_lines=60):
     if total > 1 and not t.get('reset_before'):
         t['reset_before'] = True
 
+    board = Board(cfg)
+    runner = Runner(board, name, t)
     rounds = []
     for i in range(1, total + 1):
         buf = io.StringIO()
         ok, ended, err = False, 'none', None
         try:
             with contextlib.redirect_stdout(buf):
-                ok, ended = _execute_target(cfg, name, t)
+                ok, ended = runner.run()
         except SystemExit as e:
             err = str(e.code) if isinstance(e.code, str) else f'exit {e.code}'
         output = buf.getvalue()
