@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.12.0 - 2026-10-03
+
+- **四域拆分(纯内部重构,零配置影响)**:core 按 串口/开发板/电源/指令
+  四域重新切分,依赖单向:`board → {power, session/serial, shell}`——
+  - 新增 `serial.py`(串口域):`SerialChannel` 纯字节通道,收编原先散在
+    UbootSession(打开/读写)与 loady 插件(fd 借出 + O_NONBLOCK 清理)
+    的底层串口细节;`blocking_fd()` 把 fd 干净地借给 Ymodem 发送器
+  - 新增 `board.py`(开发板域):`Board.cold_boot()` / `quiet_boot()` /
+    会话工厂——开机流程从 power.py 搬入(电源域不再长串口知识),
+    冷启动与静默上电的语义不变
+  - `power.py` 收窄为纯电源动作(on/off/status + power/reset 子命令),
+    绝不碰串口;`session.py` 变 U-Boot 协议层,字节数据经 SerialChannel
+  - `shell.py`(指令域)不动
+- **插件即类**:transport/power 两族插件从"模块函数"改为类——基类
+  `Transport` / `PowerDevice`(抽象 on/off/status 或 send)住在各插件包
+  `__init__.py`,插件模块提供 `PLUGIN = <类>`,类声明 `NAME` 与可选
+  `CFG_SECTION`/`DEFAULTS`(config 合并默认值的约定不变)。封装 = 各插件
+  细节藏在类里;多态 = 不同子类同一接口。新增电源插件示例:实现
+  `on()/off()/status()` 三方法即可被 `[power].method` 选中
+
 ## 0.11.0 - 2026-10-03
 
 - **移除 tftp `method = "local"`(不兼容)**:boardctl 不再自建临时 TFTP

@@ -7,38 +7,47 @@
 """
 import threading
 
-NAME = 'mijia'
+from . import PowerDevice
 
 _lock = threading.Lock()
-_dev_cache = {}   # (did, dev_name) -> mijiaDevice,避免每次操作都拉设备列表
+_dev_cache = {}   # (did, dev_name) -> mijiaDevice,进程级缓存,避免每次操作都拉设备列表
 
 
-def _device(cfg):
-    with _lock:
-        p = cfg['power'].get('mijia', {})
-        key = (p.get('did'), p.get('dev_name'))
-        if key not in _dev_cache:
-            from mijiaAPI.apis import mijiaAPI
-            from mijiaAPI.devices import mijiaDevice
-            kwargs = {}
-            if p.get('did'):
-                kwargs['did'] = p['did']
-            elif p.get('dev_name'):
-                kwargs['dev_name'] = p['dev_name']
-            else:
-                raise ValueError('[power.mijia] 需要 dev_name 或 did')
-            _dev_cache[key] = mijiaDevice(mijiaAPI(), **kwargs)
-        return _dev_cache[key]
+class MijiaPower(PowerDevice):
+    NAME = 'mijia'
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+
+    def _device(self):
+        with _lock:
+            p = self.cfg['power'].get('mijia', {})
+            key = (p.get('did'), p.get('dev_name'))
+            if key not in _dev_cache:
+                from mijiaAPI.apis import mijiaAPI
+                from mijiaAPI.devices import mijiaDevice
+                kwargs = {}
+                if p.get('did'):
+                    kwargs['did'] = p['did']
+                elif p.get('dev_name'):
+                    kwargs['dev_name'] = p['dev_name']
+                else:
+                    raise ValueError('[power.mijia] 需要 dev_name 或 did')
+                _dev_cache[key] = mijiaDevice(mijiaAPI(), **kwargs)
+            return _dev_cache[key]
+
+    def _prop(self):
+        """开关量属性名:默认 'on';非 'on' 的设备在 [power.mijia] 配 prop"""
+        return self.cfg['power'].get('mijia', {}).get('prop', 'on')
+
+    def on(self):
+        self._device().set(self._prop(), True)
+
+    def off(self):
+        self._device().set(self._prop(), False)
+
+    def status(self):
+        return bool(self._device().get(self._prop()))
 
 
-def _prop(cfg):
-    """开关量属性名:默认 'on';非 'on' 的设备在 [power.mijia] 配 prop"""
-    return cfg['power'].get('mijia', {}).get('prop', 'on')
-
-
-def set_power(cfg, on):
-    _device(cfg).set(_prop(cfg), bool(on))
-
-
-def get_power(cfg):
-    return bool(_device(cfg).get(_prop(cfg)))
+PLUGIN = MijiaPower

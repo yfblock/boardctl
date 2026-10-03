@@ -70,19 +70,23 @@ boardctl -b myboard power off      # 手动关机(on 同理)
 boardctl/
 ├── cli.py        命令行接线(google-fire 类组件,无业务逻辑)
 ├── config.py     板卡 TOML 加载(不依赖其他模块)
-├── session.py    U-Boot 串口会话 ← config
-├── power.py      电源/冷启动   ← config, session
-├── shell.py      命令执行(本机/ssh)← config
-├── runner.py     run 编排       ← 上述全部 + plugins
-└── plugins/      插件(目录约定自动发现,零注册代码)
-    ├── transport/   传输插件:loady.py、tftp.py
+├── serial.py     串口域:纯字节通道 + fd 借出(不依赖其他模块)
+├── session.py    U-Boot 协议:在串口通道上收发命令 ← serial
+├── power.py      电源域:纯电源动作 on/off/status,绝不碰串口 ← plugins
+├── board.py      开发板域:冷启动/静默上电/会话工厂 ← power, session
+├── shell.py      指令域:命令执行(本机/ssh)← config
+├── runner.py     run 编排       ← board + plugins
+└── plugins/      插件即类(目录约定自动发现,零注册代码)
+    ├── transport/   传输插件:loady.py、tftp.py(Transport 子类)
     └── power/       电源插件:mijia.py(小米云)、command.py(命令,默认)
 ```
 
-**插件接口**(约定写在各 `__init__.py`;可选声明 `CFG_SECTION` + `DEFAULTS` 自带配置默认值,TOML 优先):
+**插件即类**(基类与约定写在各 `plugins/<族>/__init__.py`;插件模块提供
+`PLUGIN = <类>`,类声明 `NAME` 与可选 `CFG_SECTION` + `DEFAULTS` 自带配置
+默认值,TOML 优先;新建插件 = 丢一个文件):
 
-- 传输插件:`NAME` + `send(cfg, path, addr) -> bool`
-- 电源插件:`NAME` + `set_power(cfg, on)` + `get_power(cfg) -> bool | None`
+- 传输插件:`Transport` 子类,`send(path, addr) -> bool`
+- 电源插件:`PowerDevice` 子类,`on()` / `off()` / `status() -> bool | None`
 
 新建插件 = 加一个文件,`[run].method`/`[power].method` 立即可用,核心零改动
 (执行命令不是插件:它是 `[run].cmd` 配置模板,由 runner 展开)。

@@ -138,7 +138,7 @@ out, ended = _stream(ser, {}, cmd=None, timeout=0.2)
 assert ended == 'timeout' and ser.written == b'', (ended, ser.written)
 
 # 被动目标整链路(_execute_target):exec=watch 走静默上电分支
-# (不碰 power_cycle_and_wait——那个会发 Ctrl-C)、全程零写入、断言照常
+# (不碰 Board.cold_boot——那个会发 Ctrl-C)、全程零写入、断言照常
 import unittest.mock as _mock  # noqa: E402
 
 _wser = _FakeSer([b'U-Boot 2021.10\r\n', b'TEST_RUNNER_DONE\r\n', b'soph# '])
@@ -146,8 +146,15 @@ _pcalls = []
 
 
 class _FakeSession:
-    def __init__(self, cfg):
-        self.ser = _wser
+    """UbootSession 桩:from_cfg 开出挂在 _wser 上的会话"""
+
+    def __init__(self, channel, prompt):
+        self.channel = channel
+        self.prompt = prompt
+
+    @classmethod
+    def from_cfg(cls, cfg):
+        return cls(_wser, cfg['uboot']['prompt'])
 
     def __enter__(self):
         return self
@@ -156,16 +163,26 @@ class _FakeSession:
         return False
 
 
+class _FakeBoard:
+    """Board 桩:记录冷启动走的是哪条路径"""
+
+    def __init__(self, cfg):
+        pass
+
+    def cold_boot(self, boot_timeout=60):
+        _pcalls.append('WAIT')
+
+    def quiet_boot(self, channel):
+        _pcalls.append('quiet')
+
+
 _mincfg = {'name': 'fake', 'serial': {'url': '', 'timeout': 0.05},
            'uboot': {'prompt': 'soph#', 'load_addr': '0x80080000'}, 'power': {}}
 import contextlib, io as _io2  # noqa: E402
 
 with contextlib.redirect_stdout(_io2.StringIO()), \
         _mock.patch.object(_runner, 'UbootSession', _FakeSession), \
-        _mock.patch.object(_runner.power, 'power_cycle_quiet',
-                           lambda cfg, ser: _pcalls.append('quiet')), \
-        _mock.patch.object(_runner.power, 'power_cycle_and_wait',
-                           lambda cfg, boot_timeout=60: _pcalls.append('WAIT')):
+        _mock.patch.object(_runner, 'Board', _FakeBoard):
     ok, ended = _runner._execute_target(_mincfg, 'watch-t',
                                         {'exec': 'watch', 'reset_before': True,
                                          'after': 'none', 'timeout': 1.0,
@@ -227,41 +244,48 @@ with tempfile.TemporaryDirectory() as td:
     outside = Path(td) / 'elsewhere.bin'
     outside.write_bytes(b'OTHER')
     cfg_x = {'tftp': {'method': 'external', 'local_dir': str(root)}}
-    _tftp._stage_file(cfg_x, str(root / 'hello.bin'))     # 原地:不抛 SameFileError
+    _tftp.TftpTransport(cfg_x)._stage_file(str(root / 'hello.bin'))     # 原地:不抛 SameFileError
     assert (root / 'hello.bin').read_bytes() == b'BM-TEST'
-    _tftp._stage_file(cfg_x, str(outside))                # 异地:落盘进 tftp 根
+    _tftp.TftpTransport(cfg_x)._stage_file(str(outside))                # 异地:落盘进 tftp 根
     assert (root / 'elsewhere.bin').read_bytes() == b'OTHER'
 
     # 8.3 local 已移除(不再自建 TFTP 服务器):残留配置报迁移指引
     cfg_l = {'tftp': {'method': 'local', 'local_dir': str(root)}}
     try:
-        _tftp._stage_file(cfg_l, str(root / 'hello.bin'))
+        _tftp.TftpTransport(cfg_l)._stage_file(str(root / 'hello.bin'))
         raise AssertionError('method=local 应 sys.exit 退出(已移除)')
     except SystemExit as e:
         assert 'external' in str(e) and 'loady' in str(e), e
 
-# 9. 电源:mijia 开关量属性名可配(默认 on);power 子命令语义(on/off/status 经当前插件)
+# 9. 电源:插件即类(PowerDevice 子类,多态同接口);mijia 开关量属性名
+#    可配(默认 on);power 子命令语义(on/off/status 经当前电源插件类)
 from boardctl import power as _power_mod  # noqa: E402
 from boardctl.plugins import POWER as _POWER_REG  # noqa: E402
 from boardctl.plugins.power import mijia as _mijia  # noqa: E402
 
-assert _mijia._prop({'power': {}}) == 'on'                      # 缺省:多数插座
-assert _mijia._prop({'power': {'mijia': {}}}) == 'on'
-assert _mijia._prop({'power': {'mijia': {'prop': 'power'}}}) == 'power'
+assert _mijia.MijiaPower({'power': {}})._prop() == 'on'                # 缺省:多数插座
+assert _mijia.MijiaPower({'power': {'mijia': {}}})._prop() == 'on'
+assert _mijia.MijiaPower({'power': {'mijia': {'prop': 'power'}}})._prop() == 'power'
 
 
 class _FakePowerPlugin:
+    """PowerDevice 形状的桩:记录 on/off 调用,status 可拨"""
+
     NAME = 'fake'
     calls = []
     state = True
 
-    @classmethod
-    def set_power(cls, cfg, on):
-        cls.calls.append(on)
+    def __init__(self, cfg):
+        self.cfg = cfg
 
-    @classmethod
-    def get_power(cls, cfg):
-        return cls.state
+    def on(self):
+        self.calls.append(True)
+
+    def off(self):
+        self.calls.append(False)
+
+    def status(self):
+        return self.state
 
 
 _POWER_REG['fake'] = _FakePowerPlugin

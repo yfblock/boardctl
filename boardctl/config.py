@@ -67,12 +67,12 @@ def load_board(name):
     cfg['tftp'] = dict(data.get('tftp', {}))
     cfg['run'] = data.get('run', {})
 
-    # 插件自带默认值:按插件的 CFG_SECTION 声明合并(TOML 值优先)。
+    # 插件自带默认值:按插件类的 CFG_SECTION 声明合并(TOML 值优先)。
     # 函数内 import,避免 config <-> plugins 模块级循环依赖
     from .plugins import all_plugins
-    for mod in all_plugins():
-        section = getattr(mod, 'CFG_SECTION', None)
-        defaults = getattr(mod, 'DEFAULTS', None)
+    for plugin in all_plugins():
+        section = getattr(plugin, 'CFG_SECTION', None)
+        defaults = getattr(plugin, 'DEFAULTS', None)
         if section and isinstance(defaults, dict):
             merged = dict(defaults)
             merged.update(cfg.get(section, {}))

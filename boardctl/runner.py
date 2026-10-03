@@ -11,6 +11,7 @@ import sys
 import time
 
 from . import power
+from .board import Board
 from .config import BASE_DIR
 from .plugins import TRANSPORT
 from .session import UbootSession
@@ -64,7 +65,7 @@ def _expand_cmd(cfg, name, t):
     return re.sub(r'\{(\w+)\}', _sub, t['cmd'])
 
 
-def _stream_run(ser, cmdline, prompt, t, interactive, timeout):
+def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
     """流式执行一条 U-Boot 命令:输出实时打印,结束条件取最先者——
     提示符重现(prompt)/ fail_re 命中(fail)/ 正向断言全部命中(matched,
     非交互)/ 超时(timeout)/ 用户退出(user,Ctrl-\\;仅交互模式)。
@@ -77,7 +78,7 @@ def _stream_run(ser, cmdline, prompt, t, interactive, timeout):
     返回 (累计输出, 结束原因)。"""
     decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
     if cmdline is not None:
-        ser.write(cmdline.encode() + b'\r')
+        ch.write(cmdline.encode() + b'\r')
     buf = ''
     deadline = time.monotonic() + timeout if not (interactive and sys.stdin.isatty()) else None
     fail_deadline = None
@@ -94,7 +95,7 @@ def _stream_run(ser, cmdline, prompt, t, interactive, timeout):
               end='', flush=True)
     try:
         while True:
-            data = ser.read(256)
+            data = ch.read(256)
             if data:
                 text = decoder.decode(data)
                 print(text, end='', flush=True)
@@ -113,7 +114,7 @@ def _stream_run(ser, cmdline, prompt, t, interactive, timeout):
                     b = os.read(sys.stdin.fileno(), 1024)
                     if not b or QUIT_BYTE in b:
                         return buf, 'user'
-                    ser.write(b)   # 原样转发(含 Ctrl-C,交给设备处理)
+                    ch.write(b)   # 原样转发(含 Ctrl-C,交给设备处理)
             else:
                 if _fail_hit(t, buf):
                     if linger <= 0:
@@ -192,17 +193,17 @@ def _execute_target(cfg, name, t):
                 sys.exit(f'exec={exec_mode} 为被动模式,不传输文件(板子自行获取)——去掉 file 配置')
             timeout = float(t.get('timeout', 15))
             interactive = bool(t.get('interactive'))
-            with UbootSession(cfg) as s:
+            with UbootSession.from_cfg(cfg) as s:
                 if t.get('reset_before'):
                     print(f'[{name}] 冷启动(静默:断电->上电,不写串口)', flush=True)
-                    power.power_cycle_quiet(cfg, s.ser)
+                    Board(cfg).quiet_boot(s.channel)
                 print(f'[{name}] 被动观察(exec={exec_mode}:不发送任何命令)', flush=True)
-                out, ended = _stream_run(s.ser, None, cfg['uboot']['prompt'],
+                out, ended = _stream_run(s.channel, None, cfg['uboot']['prompt'],
                                          t, interactive, timeout)
         else:
             if t.get('reset_before'):
                 print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
-                power.power_cycle_and_wait(cfg)
+                Board(cfg).cold_boot()
 
             if 'file' not in t:
                 sys.exit('该目标需要配置 file(仅 exec="watch" 被动模式可省略)')
@@ -218,7 +219,7 @@ def _execute_target(cfg, name, t):
                 sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
 
             print(f'[{name}] 传输 {t["file"]} ({method}) -> {addr}', flush=True)
-            if not transport.send(cfg, path, addr):
+            if not transport(cfg).send(path, addr):
                 sys.exit(1)
 
             if cmdline is None:
@@ -228,11 +229,11 @@ def _execute_target(cfg, name, t):
             timeout = float(t.get('timeout', 15))
             interactive = bool(t.get('interactive'))
             print(f'[{name}] 执行: {cmdline}', flush=True)
-            with UbootSession(cfg) as s:
+            with UbootSession.from_cfg(cfg) as s:
                 ok, _ = s.wait_prompt()
                 if not ok:
                     sys.exit('等待 U-Boot 提示符超时')
-                out, ended = _stream_run(s.ser, cmdline, cfg['uboot']['prompt'],
+                out, ended = _stream_run(s.channel, cmdline, cfg['uboot']['prompt'],
                                          t, interactive, timeout)
         print(f'[{name}] 执行结束({ended})', flush=True)
 
