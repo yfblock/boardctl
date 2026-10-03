@@ -61,16 +61,21 @@ class Board:
         out.write(text)
         out.flush()
 
-    def _power_cycle(self):
-        """断电 -> 延时 -> 上电(节拍值归电源域 reset_delay)。显示在
-        断电前摘下、上电前挂上:上电起的输出即捕即显,断电窗口的线路
-        噪声不上屏"""
+    def _power_cycle(self, note=None):
+        """断电 -> 延时 -> 上电(节拍值归电源域 reset_delay)。note 是
+        上电前的提示行(冷启动的"等待控制台提示符"):提示先落屏、
+        再挂显示、再上电——上电即出 SPL 字节,提示行才不会被撕进
+        字节流中间,也不会晚于对串口的任何写入(轮询 Ctrl-C 在其后的
+        等待循环里)。显示在断电前摘下、上电前挂上:上电起的输出
+        即捕即显,断电窗口的线路噪声不上屏"""
         self.stream.set_tap(None)
         print('断电...', flush=True)
         self.power.off()
         time.sleep(self.power.reset_delay)
-        self.stream.set_tap(self._show)
         print('上电...', flush=True)
+        if note:
+            print(note, flush=True)
+        self.stream.set_tap(self._show)   # 提示已落屏,此后上电字节即捕即显
         self.power.on()
 
     def cold_boot(self, boot_timeout=60):
@@ -78,8 +83,7 @@ class Board:
         不论载荷是 U-Boot、Linux shell 还是其他 CLI)。启动输出即捕即显
         (tap 挂在上电前)——等待不再是黑盒。轮询会周期性向串口发 Ctrl-C
         清残留输入——不可用于被动观察"""
-        self._power_cycle()
-        print('等待控制台提示符...', flush=True)
+        self._power_cycle(note='等待控制台提示符...')
         deadline = time.monotonic() + boot_timeout
         while time.monotonic() < deadline:
             if self.console.interactive_ready(self.session(), timeout=6):
@@ -99,8 +103,10 @@ class Board:
         time.sleep(self.power.reset_delay)
         self.serial.drain()     # 内核接收缓冲里的断电噪声
         self.stream.clear()     # 捕获日志与解码残态:观察起点 = 上电
-        self.stream.set_tap(self._show)   # 显示先于上电挂上:第一字节起即显
+        # 提示先落屏再挂显示(同冷启动纪律):上电即出 SPL 字节,
+        # 提示行不被撕进字节流中间
         print('上电(静默,不写串口)...', flush=True)
+        self.stream.set_tap(self._show)
         self.power.on()
 
     def reboot(self):
