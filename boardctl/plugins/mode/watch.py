@@ -1,6 +1,7 @@
 """watch 启动模式:被动观察——板子自己完成传输与执行(bootcmd/板上自动
 脚本),boardctl 全程零写入:不发命令,连冷启动等提示符的 Ctrl-C 都不能发
-(会打断板上流程)。串口先挂好再静默上电,从启动输出的第一个字节开始收。"""
+(会打断板上流程)。捕获流常驻(连接在 Board 构造时已建立),静默上电前
+清噪——启动输出从第一个字节起全数落进捕获日志。"""
 import sys
 
 from . import RunMode
@@ -18,12 +19,11 @@ class WatchMode(RunMode):
             if t.get(k):
                 sys.exit(f'run.{name}(mode=watch)为被动模式,不认 {k}'
                          '(板子自行完成传输与执行)')
-        s = board.session()   # 板的通道先挂好再上电,从首字节收流
         if t.get('reset_before'):
             print(f'[{name}] 冷启动(静默:断电->上电,不写串口)', flush=True)
-            board.quiet_boot()
+            board.quiet_boot()   # 内部清噪+上电:捕获日志的起点即上电
         print(f'[{name}] 被动观察(mode=watch:不发送任何命令)', flush=True)
-        return s.channel, None, None
+        return board.stream, None, None
 
 
 PLUGIN = WatchMode

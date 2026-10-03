@@ -78,71 +78,95 @@ for name, t in cfg['run'].items():
     assert os.path.isfile(path) or cfg['name'] == 'example', \
         f'run.{name} 文件缺失: {path}'
 
-# 6. 流式执行引擎(伪串口,无需硬件)
+# 6. 流式执行引擎(常驻捕获:ConsoleStream 读线程 + 水位等待;伪串口注入,
+#    线程/条件变量/水位全是真实实现,只换字节来源)
+import contextlib  # noqa: E402
+import threading as _threading  # noqa: E402
 import time as _time  # noqa: E402
+import io as _io  # noqa: E402
 
 from boardctl import runner as _runner  # noqa: E402
+from boardctl.console import ConsoleSession as _RealSession  # noqa: E402
+from boardctl.stream import ConsoleStream as _Stream  # noqa: E402
 
 
 class _FakeSer:
-    def __init__(self, chunks):
-        self.chunks = list(chunks)
+    """伪串口:上电(power_on)前读恒空(模拟断电静默);上电后按序吐
+    chunks,块间 read_delay 秒;记录写入。引擎入口才打水位——有意义的首块
+    必须晚于水位,read_delay 0.03 即为此裕量"""
+
+    def __init__(self, chunks=(), powered=False, read_delay=0.03):
+        self.pending = list(chunks)
+        self.live = list(chunks) if powered else []
+        self.read_delay = read_delay
         self.written = b''
+        self._lock = _threading.Lock()
 
     def read(self, n):
-        _time.sleep(0.01)
-        return self.chunks.pop(0) if self.chunks else b''
+        _time.sleep(self.read_delay)
+        with self._lock:
+            return self.live.pop(0) if self.live else b''
 
     def write(self, b):
         self.written += b
 
+    def power_on(self):
+        with self._lock:
+            self.live = list(self.pending)
+
 
 def _stream(ser, t, **kw):
-    import contextlib, io as _io
-    buf = _io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        return _runner._stream_run(ser, kw.get('cmd', 'go x'), kw.get('prompt', 'soph#'),
-                                   t, False, kw.get('timeout', 1.0))
+    st = _Stream(ser)
+    st.start()
+    try:
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            return _runner._stream_run(st, kw.get('cmd', 'go x'), kw.get('prompt', 'soph#'),
+                                       t, False, kw.get('timeout', 1.0))
+    finally:
+        st.stop()
 
 
-out, ended = _stream(_FakeSer([b'BM-TEST-START\nBM-TEST-DONE\n']),
+out, ended = _stream(_FakeSer([b'BM-TEST-START\nBM-TEST-DONE\n'], powered=True),
                      {'expect': ['BM-TEST-START', 'BM-TEST-DONE']})
 assert ended == 'matched' and 'BM-TEST-DONE' in out, (ended, out)
 
-out, ended = _stream(_FakeSer([b'output line\r\nsoph# ']), {})
+out, ended = _stream(_FakeSer([b'output line\r\nsoph# '], powered=True), {})
 assert ended == 'prompt', ended
 
-out, ended = _stream(_FakeSer([]), {}, timeout=0.3)
+out, ended = _stream(_FakeSer([], powered=True), {}, timeout=0.3)
 assert ended == 'timeout', ended
 
-out, ended = _stream(_FakeSer([b'kernel booting...']), {}, timeout=0.3)
+out, ended = _stream(_FakeSer([b'kernel booting...'], powered=True), {}, timeout=0.3)
 assert ended == 'timeout' and 'kernel booting' in out, (ended, out)
 
 # fail_re 流式即时命中(判负优先于判正);命中后先续收 fail_linger 秒再收工,
 # 让错误信息/栈输出完整(默认 2s,0 = 立即)
-out, ended = _stream(_FakeSer([b'boot ok\n', b'thread panicked at root.rs:401\n', b'never reached']),
+out, ended = _stream(_FakeSer([b'boot ok\n', b'thread panicked at root.rs:401\n', b'never reached'],
+                              powered=True),
                      {'expect': ['TEST_RUNNER_DONE'], 'fail_re': ['(?i)panic'], 'fail_linger': 0.3})
 assert ended == 'fail' and 'panicked' in out and 'never reached' in out, (ended, out)
 
-out, ended = _stream(_FakeSer([b'boot ok\n', b'thread panicked at root.rs:401\n', b'never reached']),
+out, ended = _stream(_FakeSer([b'boot ok\n', b'thread panicked at root.rs:401\n', b'never reached'],
+                              powered=True),
                      {'expect': ['TEST_RUNNER_DONE'], 'fail_re': ['(?i)panic'], 'fail_linger': 0})
 assert ended == 'fail' and 'never reached' not in out, (ended, out)
 
-out, ended = _stream(_FakeSer([b'DONE\npanic!\n']), {'expect': ['DONE'], 'fail_re': ['panic'],
-                                                     'fail_linger': 0})
+out, ended = _stream(_FakeSer([b'DONE\npanic!\n'], powered=True),
+                     {'expect': ['DONE'], 'fail_re': ['panic'], 'fail_linger': 0})
 assert ended == 'fail', ended
 
 # 被动观察(cmdline=None):零写入(连命令行回车都不发),输出照收、
 # 结束条件(断言命中/提示符/超时/fail_re)与主动模式完全一致
-ser = _FakeSer([b'U-Boot 2021.10\r\n', b'autoboot...\r\n', b'soph# '])
+ser = _FakeSer([b'U-Boot 2021.10\r\n', b'autoboot...\r\n', b'soph# '], powered=True)
 out, ended = _stream(ser, {}, cmd=None)
 assert ended == 'prompt' and ser.written == b'' and 'U-Boot 2021.10' in out, (ended, out, ser.written)
 
-ser = _FakeSer([b'autoboot\r\n', b'TEST_RUNNER_DONE\r\n', b'never printed'])
+ser = _FakeSer([b'autoboot\r\n', b'TEST_RUNNER_DONE\r\n', b'never printed'], powered=True)
 out, ended = _stream(ser, {'expect': ['TEST_RUNNER_DONE']}, cmd=None)
 assert ended == 'matched' and ser.written == b'', (ended, ser.written)
 
-ser = _FakeSer([])
+ser = _FakeSer([], powered=True)
 out, ended = _stream(ser, {}, cmd=None, timeout=0.2)
 assert ended == 'timeout' and ser.written == b'', (ended, ser.written)
 
@@ -154,47 +178,49 @@ _wser = _FakeSer([b'U-Boot 2021.10\r\n', b'TEST_RUNNER_DONE\r\n', b'soph# '])
 _pcalls = []
 
 
-class _FakeSession:
-    """ConsoleSession 桩:纯借用,不持有不关通道"""
-
-    def __init__(self, channel, prompt):
-        self.channel = channel
-        self.prompt = prompt
-
-
 class _FakeBoard:
-    """Board 桩:serial 即伪串口(可注入),session 借它开;记录冷启动
-    走哪条路径(after=none 时 power 不触)"""
+    """Board 桩:serial 即伪串口(可注入),捕获流是真的;记录冷启动走哪条
+    路径(after=none 时 power 不触)。冷启动/静默上电的桩顺带模拟上电——
+    伪串口只有 power_on 后才吐字节"""
 
     def __init__(self, cfg, ser=None):
         self.cfg = cfg
         self.power = None
         self.serial = ser or _wser
+        self.stream = _Stream(self.serial)
 
     @property
     def prompt(self):
         return self.cfg['console']['prompt']
 
     def session(self):
-        return _FakeSession(self.serial, self.cfg['console']['prompt'])
+        return _RealSession(self.stream, self.cfg['console']['prompt'])
 
     def cold_boot(self, boot_timeout=60):
         _pcalls.append('WAIT')
+        self.serial.power_on()
 
     def quiet_boot(self):
         _pcalls.append('quiet')
+        self.stream.clear()   # 真实 quiet_boot:清噪,捕获起点 = 上电
+        self.serial.power_on()
 
 
 _mincfg = {'name': 'fake', 'serial': {'url': '', 'timeout': 0.05},
            'console': {'prompt': 'soph#'},
            'uboot': {'load_addr': '0x80080000'}, 'power': {}}
-import contextlib, io as _io2  # noqa: E402
+import io as _io2  # noqa: E402
 
-with contextlib.redirect_stdout(_io2.StringIO()):
-    ok, ended = _runner.Runner(_FakeBoard(_mincfg), 'watch-t',
-                               {'mode': 'watch', 'reset_before': True,
-                                'after': 'none', 'timeout': 1.0,
-                                'expect': ['TEST_RUNNER_DONE']}).run()
+_wb = _FakeBoard(_mincfg)
+_wb.stream.start()
+try:
+    with contextlib.redirect_stdout(_io2.StringIO()):
+        ok, ended = _runner.Runner(_wb, 'watch-t',
+                                   {'mode': 'watch', 'reset_before': True,
+                                    'after': 'none', 'timeout': 1.0,
+                                    'expect': ['TEST_RUNNER_DONE']}).run()
+finally:
+    _wb.stream.stop()
 # 被动整链路:expect 一命中即收工(matched,不等提示符——与主动模式一致)
 assert ok and ended == 'matched' and _pcalls == ['quiet'], (ok, ended, _pcalls)
 assert _wser.written == b'', _wser.written   # 整链路零写入
@@ -208,11 +234,16 @@ assert _runner._resolve_mode('t', {'mode': 'watch', 'exec': 'watch'}) == 'watch'
 # console 模式整链路:不传输,冷启动到提示符后直接执行 cmd(Linux shell 形态)
 _pcalls.clear()
 _cser = _FakeSer([b'ALL PASS\r\n', b'soph# '])
-with contextlib.redirect_stdout(_io2.StringIO()):
-    ok, ended = _runner.Runner(_FakeBoard(_mincfg, _cser), 'sh-t',
-                               {'mode': 'console', 'cmd': './selftest.sh',
-                                'reset_before': True, 'after': 'none',
-                                'timeout': 1.0, 'expect': ['ALL PASS']}).run()
+_cb = _FakeBoard(_mincfg, _cser)
+_cb.stream.start()
+try:
+    with contextlib.redirect_stdout(_io2.StringIO()):
+        ok, ended = _runner.Runner(_cb, 'sh-t',
+                                   {'mode': 'console', 'cmd': './selftest.sh',
+                                    'reset_before': True, 'after': 'none',
+                                    'timeout': 1.0, 'expect': ['ALL PASS']}).run()
+finally:
+    _cb.stream.stop()
 assert ok and ended == 'matched' and _pcalls == ['WAIT'], (ok, ended, _pcalls)
 assert _cser.written == b'./selftest.sh\r', _cser.written   # 只发命令本身
 
@@ -260,6 +291,26 @@ try:
     raise AssertionError('旧式 exec=go 应被拒绝')
 except SystemExit as e:
     assert 'cmd' in str(e.code), e.code
+
+# 6b. 常驻捕获原语:水位/事件等待/清零/fd 借出配合(park-resume 握手)
+_pser = _FakeSer([b'hello\r\n'], powered=True)
+_pst = _Stream(_pser)
+_pst.start()
+try:
+    m = _pst.mark()
+    assert _pst.wait(lambda txt: 'hello' in txt, m, 2)[1]      # 谓词命中
+    _pst.park()                     # 读线程确认让位后才返回(此后绝不再读)
+    _pser.live = [b'PARKED\n']      # 借出期间设备吐的字节:滞留通道
+    m2 = _pst.mark()
+    _time.sleep(0.2)
+    assert _pst.text(m2) == ''      # 借出期间不进捕获日志
+    _pst.resume()
+    assert _pst.wait(lambda txt: 'PARKED' in txt, m2, 2)[1]     # resume 后无损接上
+    _pst.clear()                    # 清日志与解码残态(静默上电前清噪)
+    assert _pst.mark() == 0 and _pst.text(0) == ''
+    assert _pst.wait(lambda txt: 'never' in txt, 0, 0.05)[1] is False   # 超时信号不丢
+finally:
+    _pst.stop()
 
 # 7. 电源语义层导入无误
 from boardctl import power  # noqa: E402,F401

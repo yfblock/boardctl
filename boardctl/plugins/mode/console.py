@@ -28,8 +28,7 @@ class ConsoleMode(RunMode):
             board.cold_boot()
 
         print(f'[{name}] 执行: {cmdline}', flush=True)
-        s = board.session()   # cold_boot 已确认提示符在位,直接执行
-        return s.channel, cmdline, None
+        return board.stream, cmdline, None   # cold_boot 已确认提示符,流式引擎自己标记水位
 
 
 PLUGIN = ConsoleMode

@@ -83,7 +83,7 @@ class TftpTransport(Transport):
             sys.exit(f'未知 tftp.method: {method}(可用: remote / external)')
 
     def send(self, channel, path, addr):
-        """channel: 板的串口通道(编排借出,插件不自开连接,用完不关)"""
+        """channel: 板的常驻捕获流(编排借出,插件不自开连接,用完不关)"""
         self._stage_file(path)
         fname = os.path.basename(path)
         server_ip = self.cfg['uboot'].get('server_ip')
@@ -93,7 +93,7 @@ class TftpTransport(Transport):
             sys.exit('等待 U-Boot 提示符超时,设备可能不在 U-Boot 命令行')
         if self.cfg['uboot'].get('ensure_server_ip') and server_ip:
             s.cmd(f'setenv serverip {server_ip}')
-        out = s.cmd(f'tftpboot {addr} {fname}', timeout=60)
+        out, hit = s.cmd(f'tftpboot {addr} {fname}', timeout=60)
         print(out.strip('\r\n'))
         m = re.search(r'Bytes transferred = (\d+)', out)
         if m:
@@ -103,7 +103,8 @@ class TftpTransport(Transport):
             print(f'tftp {"OK" if ok else "大小不符"}: {size} 字节 -> {addr} (server {server_ip})'
                   + ('' if ok else f'(本地 {actual})'))
             return ok
-        print('tftp 传输失败(未见 Bytes transferred)')
+        print('tftp 传输失败(未见 Bytes transferred'
+              + ('' if hit else ';等待提示符超时,输出是截断的') + ')')
         return False
 
 

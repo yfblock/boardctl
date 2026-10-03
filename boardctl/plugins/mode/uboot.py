@@ -47,7 +47,7 @@ class UbootMode(RunMode):
             sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
 
         print(f'[{name}] 传输 {t["file"]} ({method}) -> {addr}', flush=True)
-        if not transport(self.cfg).send(board.serial, path, addr):
+        if not transport(self.cfg).send(board.stream, path, addr):
             sys.exit(1)
 
         if cmdline is None:
@@ -55,11 +55,11 @@ class UbootMode(RunMode):
             return None, None, 'loaded'
 
         print(f'[{name}] 执行: {cmdline}', flush=True)
-        s = board.session()   # 同一条板通道:传输、执行不分家
+        s = board.session()   # 同一条捕获流:传输、执行不分家
         ok, _ = s.wait_prompt()
         if not ok:
             sys.exit('等待 U-Boot 提示符超时')
-        return s.channel, cmdline, None
+        return s.stream, cmdline, None
 
 
 PLUGIN = UbootMode

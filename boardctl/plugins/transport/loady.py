@@ -25,7 +25,7 @@ class LoadyTransport(Transport):
         return shutil.which('lrzsz-sb') or shutil.which('sb')
 
     def send(self, channel, path, addr):
-        """channel: 板的串口通道(编排借出,插件不自开连接,用完不关)"""
+        """channel: 板的常驻捕获流(编排借出,插件不自开连接,用完不关)"""
         sender = self._sender()
         if not sender:
             sys.exit('找不到 Ymodem 发送器(Arch: lrzsz 包的 lrzsz-sb;Debian: lrzsz 的 sb)')
@@ -36,21 +36,26 @@ class LoadyTransport(Transport):
         channel.write(f'loady {addr}\r')
         time.sleep(1.5)  # 等设备进入 Ymodem 接收态
 
-        # 把串口 fd 借给发送器(清 O_NONBLOCK 等底层细节是串口域
-        # SerialChannel 的职责,插件不碰)
-        fd = channel.blocking_fd()
-        if fd is None:
-            sys.exit('该串口 URL 不支持把 fd 交给 Ymodem 发送器')
-
-        p = subprocess.Popen([sender, os.path.abspath(path)],
-                             stdin=fd, stdout=fd, stderr=subprocess.PIPE)
+        # 把串口 fd 借给发送器:捕获线程先让位(park),借出期间的 Ymodem
+        # 协议字节归发送器、不进捕获日志;resume 后剩余字节无缝接上
+        # (清 O_NONBLOCK 等底层细节是串口域 SerialChannel 的职责,插件不碰)
+        channel.park()
         try:
-            _, err = p.communicate(timeout=180)
-        except subprocess.TimeoutExpired:
-            p.kill()
-            p.communicate()
-            print('Ymodem 发送器超时(180s),已终止')
-            return False
+            fd = channel.blocking_fd()
+            if fd is None:
+                sys.exit('该串口 URL 不支持把 fd 交给 Ymodem 发送器')
+
+            p = subprocess.Popen([sender, os.path.abspath(path)],
+                                 stdin=fd, stdout=fd, stderr=subprocess.PIPE)
+            try:
+                _, err = p.communicate(timeout=180)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.communicate()
+                print('Ymodem 发送器超时(180s),已终止')
+                return False
+        finally:
+            channel.resume()
         tail, _ = s.read_until(s.prompt, 10)
         print(err.decode('utf-8', 'replace').strip())
         print(tail.strip('\r\n'))

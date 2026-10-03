@@ -3,9 +3,9 @@
 同一 runner 复跑多轮并汇总。CLI(do_run)实时打印;程序化调用用
 run_collect(捕获输出,返回结构化结果)。
 目标"怎么弄起来"由启动模式插件族(plugins/mode,[run.*].mode 选择)解释;
-流式引擎(_stream_run)与断言引擎(evaluate)是无状态纯函数,所有模式共用
-——判定与收尾语义一致由共享代码保证,不靠各插件自觉。"""
-import codecs
+流式引擎(_stream_run)消费板的常驻捕获流(水位 + 事件唤醒,见 stream.py)
+与断言引擎(evaluate)为共享代码——判定与收尾语义一致由共享代码保证,
+不靠各插件自觉。"""
 import contextlib
 import io
 import os
@@ -63,25 +63,36 @@ def _resolve_mode(name, t):
 
 
 def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
-    """流式执行一条 U-Boot 命令:输出实时打印,结束条件取最先者——
-    提示符重现(prompt)/ fail_re 命中(fail)/ 正向断言全部命中(matched,
-    非交互)/ 超时(timeout)/ 用户退出(user,Ctrl-\\;仅交互模式)。
+    """流式执行一条命令(ch = 板的常驻捕获流):新到文本实时打印,
+    结束条件取最先者——提示符重现(prompt)/ fail_re 命中(fail)/ 正向断言
+    全部命中(matched,非交互)/ 超时(timeout)/ 用户退出(user,Ctrl-\\;
+    仅交互模式)。观察窗口 = 入口水位:此前的字节已在捕获日志里但断言
+    不回看(与旧实现的调度窗口等价)。
     fail_re 命中后不立即收工:再继续收集 fail_linger 秒(默认 2,可配 0)
     让错误信息/栈输出完整,然后判 FAIL 走收尾;同批输出正负断言双命中时
     判负优先。interactive 且 stdin 为 TTY 时进入交互:stdin 原样转发到
-    设备、不限时(适合 go/booti 进入内核后继续操作)。
+    设备、不限时(读侧在捕获线程,主循环只管键盘转发;适合 go/booti
+    进入内核后继续操作)。
     cmdline=None 时为被动观察:不向设备发送任何字节,只收流
-    (exec=watch——板子自己跑自动流程,任何写入都会打断它)。
+    (mode=watch——板子自己跑自动流程,任何写入都会打断它)。
     返回 (累计输出, 结束原因)。"""
-    decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+    since = ch.mark()
     if cmdline is not None:
-        ch.write(cmdline.encode() + b'\r')
-    buf = ''
-    deadline = time.monotonic() + timeout if not (interactive and sys.stdin.isatty()) else None
+        ch.write(cmdline + '\r')
+
+    deadline = None if (interactive and sys.stdin.isatty()) else time.monotonic() + timeout
     fail_deadline = None
     linger = max(0.0, float(t.get('fail_linger', 2)))   # fail 命中后的续收秒数
-
     raw = False
+
+    def _out(text):
+        print(text, end='', flush=True)
+
+    def _ended(text):
+        if prompt and prompt in text[-256:]:
+            return True
+        return not raw and (_fail_hit(t, text) or _positives_satisfied(t, text))
+
     if deadline is None:  # 交互模式:raw 终端 + Ctrl-\ 退出
         import termios
         import tty
@@ -92,35 +103,32 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
               end='', flush=True)
     try:
         while True:
-            data = ch.read(256)
-            if data:
-                text = decoder.decode(data)
-                print(text, end='', flush=True)
-                buf += text
-
             if fail_deadline is not None:   # 止损续收窗口:只收输出,不再判定
-                if time.monotonic() >= fail_deadline:
-                    return buf, 'fail'
-                continue
-
-            if prompt and prompt in buf[-256:]:
-                return buf, 'prompt'
-            if raw:
-                r, _, _ = select.select([sys.stdin], [], [], 0)
-                if r:
-                    b = os.read(sys.stdin.fileno(), 1024)
-                    if not b or QUIT_BYTE in b:
-                        return buf, 'user'
-                    ch.write(b)   # 原样转发(含 Ctrl-C,交给设备处理)
-            else:
+                ch.wait(lambda _t, fd=fail_deadline: time.monotonic() >= fd,
+                        since, max(0.0, fail_deadline - time.monotonic()),
+                        on_chunk=_out)
+                return ch.text(since), 'fail'
+            slice_ = 0.05 if deadline is None else deadline - time.monotonic()
+            _, hit = ch.wait(_ended, since, max(0.0, slice_), on_chunk=_out)
+            if hit:
+                buf = ch.text(since)
+                if prompt and prompt in buf[-256:]:
+                    return buf, 'prompt'
                 if _fail_hit(t, buf):
                     if linger <= 0:
                         return buf, 'fail'
                     fail_deadline = time.monotonic() + linger
-                elif _positives_satisfied(t, buf):
-                    return buf, 'matched'
-                elif deadline is not None and time.monotonic() > deadline:
-                    return buf, 'timeout'
+                    continue
+                return buf, 'matched'
+            if deadline is None:   # 交互:读侧在捕获线程,此处只转发键盘
+                r, _, _ = select.select([sys.stdin], [], [], 0)
+                if r:
+                    b = os.read(sys.stdin.fileno(), 1024)
+                    if not b or QUIT_BYTE in b:
+                        return ch.text(since), 'user'
+                    ch.write(b)
+            else:
+                return ch.text(since), 'timeout'
     finally:
         if raw:
             import termios
