@@ -585,12 +585,16 @@ with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/exampl
         _cli.fire.Fire(_cli.Boardctl, ['ls'])
 assert 'example' in _so.getvalue(), _so.getvalue()
 
-# 无参数:打印组件帮助,正常返回或退出码 0
-with contextlib.redirect_stdout(_io2.StringIO()) as _so:
-    try:
-        _cli.fire.Fire(_cli.Boardctl, [])
-    except SystemExit as e:
-        assert e.code in (0, None), e.code
+# 无参数:打印组件帮助,正常返回或退出码 0。fire 生成帮助会求值全部
+# 成员(含 cfg 属性 → 自动选板):须 mock 出恰好一块用户板,否则测试
+# 依赖本机恰好有一块板配置,在无配置的机器(CI runner)上会 sys.exit
+with _mock.patch.object(_cli, 'available_boards', lambda: {'ex': '/x/ex.toml'}), \
+        _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}):
+    with contextlib.redirect_stdout(_io2.StringIO()) as _so:
+        try:
+            _cli.fire.Fire(_cli.Boardctl, [])
+        except SystemExit as e:
+            assert e.code in (0, None), e.code
 assert 'SYNOPSIS' in _so.getvalue(), _so.getvalue()
 
 # 11. 板卡配置目录:board_dir 直接放 *.toml(~/.config/boardctl,无 boards/ 子目录);
