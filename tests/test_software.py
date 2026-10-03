@@ -6,32 +6,41 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 from boardctl.config import BASE_DIR, available_boards, load_board
-from boardctl.plugins import POWER, TRANSPORT
+from boardctl.plugins import MODE, POWER, TRANSPORT
 
-# 1. 插件注册表齐全(0.11.0 起执行插件族退役:执行命令回归 cmd 模板配置)
+# 1. 插件注册表齐全(0.11.0 起执行插件族退役:执行命令回归 cmd 模板配置;
+#    0.13 起"目标怎么弄起来"归 mode 插件族,[run.*].mode 选择)
 assert {'loady', 'tftp'} <= set(TRANSPORT), TRANSPORT
 assert {'mijia', 'command'} <= set(POWER), POWER
+assert {'uboot', 'console', 'watch'} <= set(MODE), MODE
 
-# 2. 执行命令模板 _expand_cmd(执行插件族已退役,命令回归配置数据):
-#    变量取本目标键,{addr}/{entry} 缺省 uboot.load_addr(entry 再缺省取 addr),
-#    未知变量报错指名
-from boardctl.runner import _expand_cmd  # noqa: E402
+# 2. cmd 模板展开(执行命令是配置数据;展开器住 mode 族,{addr}/{entry}
+#    缺省链由 uboot 模式注入:addr <- uboot.load_addr,entry <- addr;
+#    console 模式无缺省,变量只取本目标键;未知变量报错指名)
+from boardctl.plugins.mode import expand_cmd  # noqa: E402
+from boardctl.plugins.mode.uboot import _expand  # noqa: E402
 
 _mc = {'uboot': {'load_addr': '0x80080000'}}
-assert _expand_cmd(_mc, 't', {'cmd': 'go {addr}'}) == 'go 0x80080000'
-assert _expand_cmd(_mc, 't', {'cmd': 'source {entry}'}) == 'source 0x80080000'
-assert _expand_cmd(_mc, 't', {'cmd': 'go {entry}', 'entry': '0x80090000'}) == 'go 0x80090000'
-assert _expand_cmd(_mc, 't', {'cmd': 'booti {addr} - {fdt}', 'fdt': '0x83000000'}) \
+assert _expand(_mc, 't', {'cmd': 'go {addr}'}) == 'go 0x80080000'
+assert _expand(_mc, 't', {'cmd': 'source {entry}'}) == 'source 0x80080000'
+assert _expand(_mc, 't', {'cmd': 'go {entry}', 'entry': '0x80090000'}) == 'go 0x80090000'
+assert _expand(_mc, 't', {'cmd': 'booti {addr} - {fdt}', 'fdt': '0x83000000'}) \
     == 'booti 0x80080000 - 0x83000000'
-assert _expand_cmd(_mc, 't', {'cmd': 'bootm {addr} {initrd} {fdt}',
-                              'initrd': '0x82000000', 'fdt': '0x83000000'}) \
+assert _expand(_mc, 't', {'cmd': 'bootm {addr} {initrd} {fdt}',
+                          'initrd': '0x82000000', 'fdt': '0x83000000'}) \
     == 'bootm 0x80080000 0x82000000 0x83000000'
-assert _expand_cmd(_mc, 't', {'cmd': 'echo {{not var}}'}) == 'echo {{not var}}'  # 非变量花括号原样
+assert expand_cmd('t', {'cmd': 'echo {{not var}}'}) == 'echo {{not var}}'  # 非变量花括号原样
+assert expand_cmd('t', {'cmd': 'tester {slot}', 'slot': 3}) == 'tester 3'  # console:变量取目标键
 try:
-    _expand_cmd(_mc, 't', {'cmd': 'booti {addr} - {fdt}'})
+    _expand(_mc, 't', {'cmd': 'booti {addr} - {fdt}'})
     raise AssertionError('cmd 缺变量应报错退出')
 except SystemExit as e:
     assert 'fdt' in str(e) and 'run.t' in str(e), e
+try:
+    expand_cmd('t', {'cmd': 'go {addr}'})   # console 无地址缺省,{addr} 即未知变量
+    raise AssertionError('console 模式 {addr} 应报错退出')
+except SystemExit as e:
+    assert 'addr' in str(e) and 'run.t' in str(e), e
 
 # 3. 断言引擎 evaluate(expect 子串 / expect_re 正则 / fail_re 禁止命中)
 from boardctl.runner import evaluate  # noqa: E402
@@ -137,7 +146,7 @@ ser = _FakeSer([])
 out, ended = _stream(ser, {}, cmd=None, timeout=0.2)
 assert ended == 'timeout' and ser.written == b'', (ended, ser.written)
 
-# 被动目标整链路(Runner.run):exec=watch 走静默上电分支
+# 被动目标整链路(Runner.run):mode=watch 走静默上电分支
 # (不碰 Board.cold_boot——那个会发 Ctrl-C)、全程零写入、断言照常
 import unittest.mock as _mock  # noqa: E402
 
@@ -154,13 +163,13 @@ class _FakeSession:
 
 
 class _FakeBoard:
-    """Board 桩:serial 即伪串口,session 借它开;记录冷启动走哪条路径
-    (after=none 时 power 不触)"""
+    """Board 桩:serial 即伪串口(可注入),session 借它开;记录冷启动
+    走哪条路径(after=none 时 power 不触)"""
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, ser=None):
         self.cfg = cfg
         self.power = None
-        self.serial = _wser
+        self.serial = ser or _wser
 
     @property
     def prompt(self):
@@ -183,14 +192,49 @@ import contextlib, io as _io2  # noqa: E402
 
 with contextlib.redirect_stdout(_io2.StringIO()):
     ok, ended = _runner.Runner(_FakeBoard(_mincfg), 'watch-t',
-                               {'exec': 'watch', 'reset_before': True,
+                               {'mode': 'watch', 'reset_before': True,
                                 'after': 'none', 'timeout': 1.0,
                                 'expect': ['TEST_RUNNER_DONE']}).run()
 # 被动整链路:expect 一命中即收工(matched,不等提示符——与主动模式一致)
 assert ok and ended == 'matched' and _pcalls == ['quiet'], (ok, ended, _pcalls)
 assert _wser.written == b'', _wser.written   # 整链路零写入
 
-# 被动模式拒绝 file(板子自己获取,传了必是配错)
+# 模式解析:mode 显式声明;旧 exec="watch" 等价(存量配置零改动);缺省 uboot
+assert _runner._resolve_mode('t', {}) == 'uboot'
+assert _runner._resolve_mode('t', {'exec': 'watch'}) == 'watch'
+assert _runner._resolve_mode('t', {'mode': 'console'}) == 'console'
+assert _runner._resolve_mode('t', {'mode': 'watch', 'exec': 'watch'}) == 'watch'
+
+# console 模式整链路:不传输,冷启动到提示符后直接执行 cmd(Linux shell 形态)
+_pcalls.clear()
+_cser = _FakeSer([b'ALL PASS\r\n', b'soph# '])
+with contextlib.redirect_stdout(_io2.StringIO()):
+    ok, ended = _runner.Runner(_FakeBoard(_mincfg, _cser), 'sh-t',
+                               {'mode': 'console', 'cmd': './selftest.sh',
+                                'reset_before': True, 'after': 'none',
+                                'timeout': 1.0, 'expect': ['ALL PASS']}).run()
+assert ok and ended == 'matched' and _pcalls == ['WAIT'], (ok, ended, _pcalls)
+assert _cser.written == b'./selftest.sh\r', _cser.written   # 只发命令本身
+
+# console 模式拒绝 file/method/addr(无传输/地址语义)
+try:
+    with contextlib.redirect_stdout(_io2.StringIO()):
+        _runner.Runner(_FakeBoard(_mincfg), 'sh-t',
+                       {'mode': 'console', 'cmd': 'x', 'file': 'f.bin',
+                        'after': 'none'}).run()
+    raise AssertionError('console 带 file 应被拒绝')
+except SystemExit as e:
+    assert 'file' in str(e.code) and 'console' in str(e.code), e.code
+
+# 未知模式给明确报错(注册表里有什么就报什么)
+try:
+    with contextlib.redirect_stdout(_io2.StringIO()):
+        _runner.Runner(_FakeBoard(_mincfg), 't', {'mode': 'gdb', 'after': 'none'}).run()
+    raise AssertionError('未知 mode 应被拒绝')
+except SystemExit as e:
+    assert 'gdb' in str(e.code) and 'uboot' in str(e.code), e.code
+
+# 被动模式拒绝 file(旧写法 exec="watch" 走同一条路——别名兼容)
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         _runner.Runner(_FakeBoard(_mincfg), 'watch-t',
@@ -199,7 +243,7 @@ try:
 except SystemExit as e:
     assert 'file' in str(e.code), e.code
 
-# 主动模式缺 file 给明确报错(此前是裸 KeyError)
+# uboot 模式缺 file 给明确报错(此前是裸 KeyError)
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         _runner.Runner(_FakeBoard(_mincfg), 'go-t',
@@ -208,7 +252,7 @@ try:
 except SystemExit as e:
     assert 'file' in str(e.code), e.code
 
-# 残留旧式 exec(除 watch)→ 指引改 cmd 模板
+# 残留旧式 exec(除 watch)→ 指引改 mode/cmd
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         _runner.Runner(_FakeBoard(_mincfg), 'go-t',

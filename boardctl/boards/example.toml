@@ -43,6 +43,8 @@ sender = ""                        # Ymodem 发送器;空则自动查找(Arch: l
 
 [run.hello]
 desc = "示例:裸机程序(go 跳转)"
+mode = "uboot"                     # 启动模式(缺省):传文件到 addr 再执行 cmd;
+                                   # console = 不传输直接执行命令;watch = 被动观察
 file = "hello.bin"                 # 占位路径,替换为你的固件(相对项目根或绝对路径)
 addr = "0x80080000"                # 加载地址(缺省取 uboot.load_addr)
 # entry = "0x80080000"             # 跳转地址(缺省 = addr;加载与入口不同时分别指定)
@@ -73,10 +75,18 @@ expect = ["BM-TEST-START"]         # 输出断言(子串);expect_re 正则版;fa
 # expect_re = ["Starting kernel"]
 # fail_re = ["panic", "ERROR:"]
 
+# Linux shell 控制台示例(不传输,上电进 shell 直接执行;无地址语义):
+# [run.selftest]
+# mode = "console"                 # cmd 必填;{addr} 等未配置的变量报错指名
+# cmd = "./selftest.sh"            # 变量取本目标键(如 cmd = "tester {slot}")
+# reset_before = true
+# after = "off"
+# expect = ["ALL PASS"]
+
 # 被动观察示例(板子自己跑自动流程:bootcmd/板上脚本完成传输与执行):
 # [run.autoboot]
 # desc = "示例:被动观察板上自动启动"
-# exec = "watch"                    # 不传输、不发送任何命令(不允许 file);
+# mode = "watch"                    # 不传输、不发送任何命令(不允许 file/cmd);
 #                                   # 静默上电(不发 Ctrl-C 等提示符,不打断板上流程),
 #                                   # 从启动输出的第一个字节开始收
 # reset_before = true

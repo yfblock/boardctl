@@ -55,9 +55,9 @@ boardctl -b myboard power off      # 手动关机(on 同理)
 | `[tftp]` | `method=remote` + `ssh_host`/`remote_dir` | scp 到远端 tftpd 服务器 |
 | | `method=external` + `local_dir` | **本机已有常驻 tftpd(如 tftpd-hpa)服务 UDP 69**:只把文件放进其根目录即可——不探测端口、不建服务器、免特权 |
 | `[loady]` | `sender` | Ymodem 发送器(空则自动查找:Arch 为 `lrzsz-sb`,Debian/Ubuntu 为 `sb`) |
-| `[run.<名字>]` | `file` / `cmd` / `method` / `timeout` | 启动目标(method 即传输插件名) |
+| `[run.<名字>]` | `mode` / `file` / `cmd` / `method` / `timeout` | 启动目标(mode 即模式插件名):`uboot`(缺省:传文件+cmd 执行,`{addr}`/`{entry}` 缺省 `uboot.load_addr`)、`console`(不传输,上电到提示符直接执行 `cmd`,无地址语义)、`watch`(被动观察:零写入,板子自己跑);旧写法 `exec="watch"` 等价 `mode="watch"` |
 | | `cmd` | U-Boot 执行命令模板:`go {addr}`、`source {addr}`、`booti {addr} - {fdt}`;变量取本目标键(`{addr}`/`{entry}` 缺省 `uboot.load_addr`),缺变量报错指名;不写 = 只加载不执行;命令序列写在 .scr 里 `source` |
-| | `exec = "watch"` | 被动观察:板子自己完成传输与执行(bootcmd/自动脚本)时用——不传输、不发送任何命令(不允许 `file`),静默上电从第一个字节开始收流;断言与收尾与主动模式一致 |
+| | `exec = "watch"` | 旧写法,等价 `mode = "watch"`(被动观察);其余 exec 值 0.11.0 起报错并给迁移指引 |
 | | `addr` / `entry` | 加载地址 / 跳转执行地址;缺省都取 `uboot.load_addr`,加载与入口不同时分别指定 |
 | | `fdt` / `initrd` | booti 执行插件附加键:设备树地址(必需)/ initrd 地址(可选) |
 | | `reset_before` | 开头自动开机:关→开→等提示符(不依赖设备初始状态) |
@@ -79,7 +79,9 @@ boardctl/
 ├── runner.py     run 编排域:Runner(一块板 ↔ 多个 runner)← board + plugins
 └── plugins/      插件即类(目录约定自动发现,零注册代码)
     ├── transport/   传输插件:loady.py、tftp.py(Transport 子类)
-    └── power/       电源插件:mijia.py(小米云)、command.py(命令,默认)
+    ├── power/       电源插件:mijia.py(小米云)、command.py(命令,默认)
+    └── mode/        启动模式插件:uboot.py、console.py、watch.py(RunMode 子类,
+                     [run.*].mode 选择;流式/断言/收尾由 runner 统一持有)
 ```
 
 **插件即类**(基类与约定写在各 `plugins/<族>/__init__.py`;插件模块提供

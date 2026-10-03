@@ -1,9 +1,10 @@
-"""run 编排域:Runner 单轮全流程(冷启动 -> 传输 -> 执行 -> 断言 -> 收尾);
+"""run 编排域:Runner 单轮全流程(上电 -> 传输 -> 执行 -> 断言 -> 收尾);
 一块板(Board)对应多个 runner——每个 [run.<名>] 目标一个,repeat > 1 时
 同一 runner 复跑多轮并汇总。CLI(do_run)实时打印;程序化调用用
 run_collect(捕获输出,返回结构化结果)。
-流式引擎(_stream_run)/断言引擎(evaluate)/cmd 模板展开(_expand_cmd)
-是无状态纯函数,不进类。"""
+目标"怎么弄起来"由启动模式插件族(plugins/mode,[run.*].mode 选择)解释;
+流式引擎(_stream_run)与断言引擎(evaluate)是无状态纯函数,所有模式共用
+——判定与收尾语义一致由共享代码保证,不靠各插件自觉。"""
 import codecs
 import contextlib
 import io
@@ -14,8 +15,7 @@ import sys
 import time
 
 from .board import Board
-from .config import BASE_DIR
-from .plugins import TRANSPORT
+from .plugins import MODE
 
 QUIT_BYTE = 0x1C   # 交互模式下退出
 
@@ -49,21 +49,17 @@ def _fail_hit(t, buf):
     return False
 
 
-def _expand_cmd(cfg, name, t):
-    """展开目标 cmd 模板(执行命令是配置数据,不是代码):变量取本目标配置键,
-    {addr}/{entry} 缺省取 uboot.load_addr(entry 再缺省取 addr);
-    未知变量报错指名,不静默留 {var} 字面量"""
-    vals = dict(t)
-    vals.setdefault('addr', cfg['uboot']['load_addr'])
-    vals.setdefault('entry', vals['addr'])
-
-    def _sub(m):
-        k = m.group(1)
-        if k not in vals or vals[k] is None:
-            sys.exit(f'run.{name} 的 cmd 用了 {{{k}}},但目标未配置该键')
-        return str(vals[k])
-
-    return re.sub(r'\{(\w+)\}', _sub, t['cmd'])
+def _resolve_mode(name, t):
+    """目标启动模式:[run.*].mode 显式声明;旧写法 exec="watch" 等价
+    mode="watch"(存量配置零改动);缺省 uboot"""
+    mode = t.get('mode')
+    exec_ = t.get('exec')
+    if exec_ is not None and exec_ != 'watch':
+        sys.exit(f'无效 exec: {exec_!r}(0.11.0 起执行命令改配 cmd 模板,'
+                 '如 cmd = "go {addr}";被动观察改配 mode = "watch")')
+    if exec_ == 'watch' and mode is None:
+        return 'watch'      # 旧写法,等价 mode = "watch"
+    return mode or 'uboot'
 
 
 def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
@@ -184,73 +180,25 @@ class Runner:
             print(f'[{name}] 收尾(after={after})失败: {e}', file=sys.stderr, flush=True)
 
     def run(self):
-        """执行单轮:冷启动 -> 传输 -> 执行 -> 断言 -> 收尾。
-        被动模式(exec=watch)跳过传输与执行:静默上电 -> 零写入被动收流,
-        断言与收尾逻辑共用。收尾(after)放 finally:传输失败、插件 sys.exit、
-        异常退出同样执行(after=none 语义不变:保持现状);
+        """执行单轮:启动模式插件 launch(上电/传输/命令) -> 流式收输出 ->
+        断言 -> 收尾。模式(uboot/console/watch/…)解释目标怎么弄起来,
+        流式/断言/收尾全模式共用。收尾(after)放 finally:传输失败、插件
+        sys.exit、异常退出同样执行(after=none 语义不变:保持现状);
         返回 (expect 判定 bool, 结束原因);未配置断言时 bool 恒 True;
         基础设施错误直接退出。"""
         cfg, name, t = self.cfg, self.name, self.t
         try:
-            exec_mode = t.get('exec')
-            if exec_mode is not None and exec_mode != 'watch':
-                sys.exit(f'无效 exec: {exec_mode!r}(0.11.0 起执行命令改配 cmd 模板,'
-                         '如 cmd = "go {addr}";exec 仅保留 "watch" 被动模式)')
-            cmdline = _expand_cmd(cfg, name, t) if t.get('cmd') else None
-            if exec_mode == 'watch' and cmdline is not None:
-                sys.exit('exec=watch 为被动模式,不执行命令——去掉 cmd 配置')
-
-            if exec_mode == 'watch':
-                # 被动模式(watch):板子自己完成传输与执行(bootcmd/自动脚本),
-                # boardctl 全程零写入——不发 loady/tftpboot/go,连冷启动等提示符的
-                # Ctrl-C 都不能发(会打断板上自动流程)。串口先挂好再上电,
-                # 从启动输出的第一个字节开始收
-                if t.get('file'):
-                    sys.exit(f'exec={exec_mode} 为被动模式,不传输文件(板子自行获取)——去掉 file 配置')
-                timeout = float(t.get('timeout', 15))
-                interactive = bool(t.get('interactive'))
-                s = self.board.session()   # 板的通道先挂好再上电,从首字节收流
-                if t.get('reset_before'):
-                    print(f'[{name}] 冷启动(静默:断电->上电,不写串口)', flush=True)
-                    self.board.quiet_boot()
-                print(f'[{name}] 被动观察(exec={exec_mode}:不发送任何命令)', flush=True)
-                out, ended = _stream_run(s.channel, None, self.board.prompt,
-                                         t, interactive, timeout)
-            else:
-                if t.get('reset_before'):
-                    print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
-                    self.board.cold_boot()
-
-                if 'file' not in t:
-                    sys.exit('该目标需要配置 file(仅 exec="watch" 被动模式可省略)')
-                path = t['file']
-                if not os.path.isabs(path):
-                    path = os.path.join(BASE_DIR, path)
-                if not os.path.isfile(path):
-                    sys.exit(f'文件不存在: {path}(先构建?)')
-                addr = t.get('addr', cfg['uboot']['load_addr'])   # 加载地址(跳转地址 {entry} 由 cmd 模板取)
-                method = t.get('method', 'tftp')
-                transport = TRANSPORT.get(method)
-                if transport is None:
-                    sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
-
-                print(f'[{name}] 传输 {t["file"]} ({method}) -> {addr}', flush=True)
-                if not transport(cfg).send(self.board.serial, path, addr):
-                    sys.exit(1)
-
-                if cmdline is None:
-                    print(f'[{name}] 已加载到 {addr}(未配置 cmd,不执行)')
-                    return True, 'loaded'
-
-                timeout = float(t.get('timeout', 15))
-                interactive = bool(t.get('interactive'))
-                print(f'[{name}] 执行: {cmdline}', flush=True)
-                s = self.board.session()   # 同一条板通道:传输、执行不分家
-                ok, _ = s.wait_prompt()
-                if not ok:
-                    sys.exit('等待 U-Boot 提示符超时')
-                out, ended = _stream_run(s.channel, cmdline, self.board.prompt,
-                                         t, interactive, timeout)
+            mode_name = _resolve_mode(name, t)
+            mode = MODE.get(mode_name)
+            if mode is None:
+                sys.exit(f'未知启动模式 {mode_name!r},可用: {" ".join(sorted(MODE)) or "(无)"}')
+            timeout = float(t.get('timeout', 15))
+            interactive = bool(t.get('interactive'))
+            ch, cmdline, done = mode(cfg).launch(self.board, name, t)
+            if done is not None:   # launch 已自行收束(如 uboot 只加载不执行)
+                return True, done
+            out, ended = _stream_run(ch, cmdline, self.board.prompt,
+                                     t, interactive, timeout)
             print(f'[{name}] 执行结束({ended})', flush=True)
 
             ok, detail, checked = evaluate(out, t)
@@ -271,7 +219,7 @@ def do_run(cfg, name, repeat=1):
         print(f'{cfg["name"]} 可启动目标(boardctl run <名字>):')
         for k, t in targets.items():
             desc = t.get('desc', '')
-            what = t.get('cmd') or t.get('exec') or '(只加载)'
+            what = t.get('cmd') or t.get('mode') or t.get('exec') or '(只加载)'
             print(f'  {k:12} {what:26} {t.get("file", "")}  {desc}')
         return
     if name not in targets:
