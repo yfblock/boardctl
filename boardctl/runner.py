@@ -64,21 +64,14 @@ def _resolve_mode(name, t):
 
 
 def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
-    """流式执行一条命令(ch = 板的常驻捕获流):结束条件取最先者——
-    提示符重现(prompt)/ fail_re 命中(fail)/ 正向断言全部命中
-    (matched,非交互)/ 超时(timeout)/ 用户退出(user,Ctrl-\\;
-    仅交互模式)。输出显示不在此处——挂在捕获事件上的显示回调
-    (stream tap,板域上电前挂上)即捕即显,这里只管结束判定与
-    (交互模式的)键盘转发。观察窗口 = 入口水位:此前的字节已在捕获
-    日志里(且已被 tap 显示),断言不回看(与旧实现的调度窗口等价)。
-    fail_re 命中后不立即收工:再继续收集 fail_linger 秒(默认 2,可配 0)
-    让错误信息/栈输出完整,然后判 FAIL 走收尾;同批输出正负断言双命中时
-    判负优先。interactive 且 stdin 为 TTY 时进入交互:stdin 原样转发到
-    设备、不限时(读侧在捕获线程,主循环只管键盘转发;适合 go/booti
-    进入内核后继续操作)。
-    cmdline=None 时为被动观察:不向设备发送任何字节,只收流
-    (mode=watch——板子自己跑自动流程,任何写入都会打断它)。
-    返回 (累计输出, 结束原因)。"""
+    """流式执行一条命令,返回 (累计输出, 结束原因)。
+
+    结束原因取最先者:prompt(提示符重现)/ fail(fail_re 命中后不立即
+    收工,续收 fail_linger 秒让错误输出完整;同批正负双命中判负优先)/
+    matched(正向断言全命中)/ timeout;交互模式另有 user(Ctrl-\\),
+    stdin 原样转发到设备、不限时。cmdline=None 为被动收流,零写入
+    (mode=watch,写入会打断板上自动流程)。显示不在此处——stream tap
+    即捕即显;观察窗口 = 入口水位,断言不回看。"""
     since = ch.mark()
     if cmdline is not None:
         ch.write(cmdline + '\r')
