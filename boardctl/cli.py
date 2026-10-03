@@ -90,10 +90,14 @@ class Boardctl:
             sys.exit(f'无效 state {state!r},可选: on 开机 / off 关机 / status 查询状态')
         cfg = _pick_board(self._board)
         p = power.Power(cfg)
-        if state != 'status':
+        if state == 'status':
+            val = p.status()
+            if val is not None:
+                print('开' if val else '关')
+        else:
             print(f'[{cfg["name"]}] 电源{"开机" if state == "on" else "关机"}({p.desc})',
                   flush=True)
-        p.apply(state)   # 内部完成动作并 exit(0)
+            (p.on if state == 'on' else p.off)()
 
     def ls(self):
         """列出开发板"""

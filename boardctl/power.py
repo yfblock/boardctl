@@ -55,22 +55,11 @@ class Power:
             sys.exit(f'查询电源状态失败({self.desc}): {e}')
         return None if val is None else bool(val)
 
-    def apply(self, state):
-        """power 子命令语义:status 打印开/关;on/off 执行动作;完成即 exit(0)"""
-        if state == 'status':
-            val = self.status()
-            if val is not None:
-                print('开' if val else '关')
-            sys.exit(0)
-        (self.on if state == 'on' else self.off)()
-        sys.exit(0)
-
     def reset(self):
-        """断电重启(after=reset 收尾用):off -> reset_delay -> on"""
+        """断电重启(after=reset 收尾 / 板域冷启动复用):off -> reset_delay -> on"""
         delay = float(self.cfg['power'].get('reset_delay', 3))
         print('断电...', flush=True)
         self.off()
         time.sleep(delay)
         print('上电...', flush=True)
         self.on()
-        print(f'已重启(如需看启动输出: boardctl -b {self.cfg["name"]} console)')

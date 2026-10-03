@@ -9,21 +9,22 @@ import threading
 
 from . import PowerDevice
 
-_lock = threading.Lock()
-_dev_cache = {}   # (did, dev_name) -> mijiaDevice,进程级缓存,避免每次操作都拉设备列表
-
 
 class MijiaPower(PowerDevice):
     NAME = 'mijia'
+
+    _lock = threading.Lock()
+    _dev_cache = {}   # (did, dev_name) -> mijiaDevice;类属性:进程级缓存,
+                      # 跨实例共享(避免每次操作都拉设备列表)
 
     def __init__(self, cfg):
         self.cfg = cfg
 
     def _device(self):
-        with _lock:
+        with self._lock:
             p = self.cfg['power'].get('mijia', {})
             key = (p.get('did'), p.get('dev_name'))
-            if key not in _dev_cache:
+            if key not in self._dev_cache:
                 from mijiaAPI.apis import mijiaAPI
                 from mijiaAPI.devices import mijiaDevice
                 kwargs = {}
@@ -33,8 +34,8 @@ class MijiaPower(PowerDevice):
                     kwargs['dev_name'] = p['dev_name']
                 else:
                     raise ValueError('[power.mijia] 需要 dev_name 或 did')
-                _dev_cache[key] = mijiaDevice(mijiaAPI(), **kwargs)
-            return _dev_cache[key]
+                self._dev_cache[key] = mijiaDevice(mijiaAPI(), **kwargs)
+            return self._dev_cache[key]
 
     def _prop(self):
         """开关量属性名:默认 'on';非 'on' 的设备在 [power.mijia] 配 prop"""

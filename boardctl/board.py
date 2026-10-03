@@ -42,12 +42,8 @@ class Board:
         """断电 → 上电 → 轮询等待控制台提示符(从任意状态回到干净可交互态,
         不论载荷是 U-Boot、Linux shell 还是其他 CLI)。
         会周期性向串口发 Ctrl-C 清残留输入——不可用于被动观察"""
-        delay = float(self.cfg['power'].get('reset_delay', 3))
-        print('断电...', flush=True)
-        self.power.off()
-        time.sleep(delay)
-        print('上电,等待控制台提示符...', flush=True)
-        self.power.on()
+        self.power.reset()   # off -> reset_delay -> on(节拍统一在电源域)
+        print('等待控制台提示符...', flush=True)
         deadline = time.monotonic() + boot_timeout
         while time.monotonic() < deadline:
             if self.console.interactive_ready(self.session(), timeout=6):
