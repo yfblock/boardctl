@@ -2,10 +2,11 @@
 + check(校验配置)
 
 google-fire 驱动:Boardctl 类即命令面,方法即子命令。全局 -b/--board 经
-构造器参数收下(须置于子命令前,与历代版本一致;-b 是 board 的短别名,
-fire 的短旗标即去掉前导连字符的参数名)。fire 不做类型/取值校验,
-power state 与 repeat 由本模块手工校验;板名 str() 兜底纯数字名被
-fire 字面量化成 int。
+构造器参数收下(须置于子命令前,与历代版本一致)。单字母短旗标(-b/-r)
+不必另设参数承接:fire 把无同名参数的单字母 key 自动映射到唯一以该字母
+开头的参数,帮助页也随之渲染成 "-b, --board" 合并形态。fire 不做类型/
+取值校验,power state 与 repeat 由本模块手工校验;板名 str() 兜底纯数字
+名被 fire 字面量化成 int。
 """
 import functools
 import os
@@ -82,9 +83,8 @@ class Boardctl:
     """开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),
     板卡与启动目标配置见 ~/.config/boardctl,插件化传输/电源/启动模式"""
 
-    def __init__(self, board=None, b=None):
-        got = b if b is not None else board
-        self._board = str(got) if got is not None else None
+    def __init__(self, board=None):
+        self._board = str(board) if board is not None else None
         self._cfg = None
 
     @property
@@ -95,12 +95,11 @@ class Boardctl:
         return self._cfg
 
     @_guarded
-    def run(self, name=None, repeat=1, r=None):
+    def run(self, name=None, repeat=1):
         """一键全流程启动(目标配置于 [run.<名字>];省略目标名则列出可用目标)
 
         repeat(--repeat/-r):重复轮数,>1 时每轮冷启动,结束汇总 PASS/FAIL
         """
-        repeat = r if r is not None else repeat
         if isinstance(repeat, bool) or not isinstance(repeat, int) or repeat < 1:
             sys.exit(f'--repeat/-r 须为正整数,收到: {repeat!r}')
         do_run(self.cfg, name, repeat)
