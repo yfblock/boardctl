@@ -151,4 +151,8 @@ class Boardctl:
 
 
 def main():
+    # fire 的帮助在 tty 下经 PAGER 起 less 全屏分页(不设则自动找 less;
+    # PAGER=- 更糟,落回 fire 内置全屏分页器)。固定 cat = 帮助直接顺序
+    # 输出,可回滚可管道;须在 fire.Fire 之前设好
+    os.environ['PAGER'] = 'cat'
     fire.Fire(Boardctl)
