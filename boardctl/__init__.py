@@ -6,4 +6,4 @@ see plugins/__init__.py). Config shapes and defaults have a single source in
 schema.py; board TOMLs live in ~/.config/boardctl (see config.py)."""
 
 # Version source of truth; pyproject reads it dynamically via hatch
-__version__ = '0.14.0'
+__version__ = '0.15.0'

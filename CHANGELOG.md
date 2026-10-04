@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.0 - 2026-10-04
 
 - Internal: comment/docstring density pass across boardctl/ and tests/ —
   narration and code-restating comments removed, multi-sentence explanations
