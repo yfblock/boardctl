@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.14.0 - 2026-10-04
+
+- **配置建模 msgspec:加载即校验(新增依赖 msgspec)**——schema.py 用
+  Struct 声明板卡 toml 的形状,加载管线 = toml 解析 → 建模校验 → 剥
+  缺省 → 插件默认值合并。拼错的键(如 expcet)、类型错误(timeout =
+  "abc")、非法枚举(after = "reboot")、负超时、核心段未知键**当场
+  报错且带字段路径**;核心段([serial]/[console]/[uboot]/[run.*])严格
+  (未知键拒绝),插件段(power/tftp/loady)宽容;核心默认值从此只在
+  schema.py 声明一份。顺带修复 `[loady]` 用户段从未进入配置的静默丢失
+  (此前一直被 sender 自动查找兜底掩盖)
+- **清除旧式配置格式(不兼容,加载即报错并给字段路径)**——归一层
+  退役,格式唯一;旧配置按下表迁移(改完可用 `boardctl check` 验证):
+  | 旧写法 | 迁移为 |
+  |---|---|
+  | `[uboot]` 段的 `prompt = "..."` | `[console]` 段的 `prompt = "..."` |
+  | `expect = "标记"`(标量) | `expect = ["标记"]`(列表) |
+  | `exec = "watch"` | `mode = "watch"` |
+  | `reset_after = true` | `after = "reset"` |
+- **新增 `boardctl check [板名]` 子命令**:按 schema 逐板校验配置格式,
+  OK/报错逐板报告,有无效配置退出码 1;省略板名校验全部,不碰硬件
+- **`-h` 帮助直接输出**:不再进 less 全屏分页(fire 在 tty 下的默认
+  行为),顺序输出可回滚可管道
+- 内部:available_boards 收敛为 pathlib glob;runner 断言取值不再
+  逐处防御标量(类型已由 schema 保证);check 的未知板判断收敛回
+  load_board 单点;注释段落化(概要行+空行+要点列表)
+
 ## 0.13.0 - 2026-10-04
 
 - **串口输出从上电起即捕即显(事件驱动显示)**:新增 stream 域——常驻
