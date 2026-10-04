@@ -11,7 +11,7 @@ from .config import available_boards, load_board
 
 try:
     try:
-        from mcp.server.mcpserver import MCPServer as FastMCP   # mcp 2.x(FastMCP 更名)
+        from mcp.server.mcpserver import MCPServer as FastMCP   # mcp 2.x (FastMCP renamed)
     except ImportError:
         from mcp.server.fastmcp import FastMCP                  # mcp 1.x
 except ImportError as e:  # pragma: no cover
@@ -19,7 +19,7 @@ except ImportError as e:  # pragma: no cover
 
 mcp = FastMCP('boardctl')
 
-MAX_SHOW_ROUNDS = 3   # run_target 结果最多展示的轮数(全量 output_tail 见返回)
+MAX_SHOW_ROUNDS = 3   # max rounds shown in run_target results (full output_tail is in the return)
 
 
 def _tool_guard(fn):
@@ -85,7 +85,7 @@ def run_target(board: str, target: str, repeat: int = 1) -> str:
 
 
 def main():
-    mcp.run()   # stdio 传输
+    mcp.run()   # stdio transport
 
 
 if __name__ == '__main__':

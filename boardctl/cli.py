@@ -22,9 +22,9 @@ from .config import BUNDLED_BOARDS_DIR, available_boards, load_board
 from .schema import BoardCfg
 from .runner import do_run
 
-# result_action='return_value':命令成功时 app.meta() 正常返回而不是
-# sys.exit(0)——保持可嵌入(测试/程序化调用);成败退出码由命令自身
-# sys.exit 与错误路径负责
+# result_action='return_value': on success app.meta() returns normally
+# instead of sys.exit(0) — keeps it embeddable (tests/programmatic calls);
+# exit codes are owned by each command's own sys.exit and error paths
 app = cyclopts.App(name='boardctl', version=__version__,
                    result_action='return_value')
 
@@ -63,7 +63,7 @@ def _launch(
     """开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),
     板卡与启动目标配置见 ~/.config/boardctl,插件化传输/执行/电源/启动模式"""
     command, bound, ignored = app.parse_args(tokens)
-    if 'cfg' in ignored:                 # 仅声明了 cfg 的子命令才解析板卡(ls/check 不需要)
+    if 'cfg' in ignored:                 # resolve board only for subcommands declaring cfg (ls/check don't)
         ignored['cfg'] = load_board(_board_name(board))
     command(*bound.args, **bound.kwargs, **ignored)
 
@@ -77,23 +77,23 @@ def run(
     cfg: Annotated[BoardCfg, Parameter(parse=False)],
 ):
     """一键全流程启动(目标配置于 [run.<名字>];省略目标名则列出可用目标)"""
-    if repeat < 1:   # 类型已由 int 注解保证,这里只拦范围
+    if repeat < 1:   # int annotation guarantees the type; only the range is checked here
         sys.exit(f'--repeat/-r 须为正整数,收到: {repeat!r}')
 
     def ensure_off():
-        """打断善后:板在开机状态则执行一次关机,保证程序结束后设备是关的"""
         print('\n[boardctl] 程序被打断,执行关机保证...', file=sys.stderr, flush=True)
-        p = power.Power(cfg)          # 闭包直取 cfg,不必传参
+        p = power.Power(cfg)          # closure takes cfg directly, no parameter needed
         try:
             state = p.status()
         except SystemExit:
             state = None
         if state is False:
-            return  # 本来就是关的
+            return  # already off
         if not p.off(check=False):
             print('[boardctl] 自动关机失败,请手动确认电源状态', file=sys.stderr)
 
-    # 钩子在 cfg 已落定后才装:板名解析阶段的退出不触发善后
+    # install the hook only after cfg is settled: exits during board-name
+    # resolution don't trigger cleanup
     old_term = signal.signal(signal.SIGTERM, _on_signal)
     try:
         do_run(cfg, name, repeat)
@@ -149,7 +149,7 @@ def check(
     failed = 0
     for n in [name] if name is not None else sorted(boards):
         try:
-            load_board(n)   # 未知板/配置无效的判断都在 load_board,报错自带板名
+            load_board(n)   # unknown-board/invalid-config checks live in load_board; errors carry the board name
             print(f'{n}: OK')
         except SystemExit as e:
             failed += 1

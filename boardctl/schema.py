@@ -21,7 +21,7 @@ class SerialCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
 
 
 class ConsoleCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
-    prompt: str = '=>'    # 控制台提示符(U-Boot/Linux shell/其他 CLI 皆可)
+    prompt: str = '=>'    # console prompt (U-Boot/Linux shell/any other CLI)
 
 
 class UbootCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
@@ -34,36 +34,36 @@ class UbootCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
 class MijiaCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
     """[power.mijia] 米家插座参数(method = "mijia" 时生效)"""
 
-    did: str | None = None       # 设备 id(与 dev_name 二选一)
+    did: str | None = None       # device id (either this or dev_name)
     dev_name: str | None = None
-    prop: str = 'on'             # 开关量属性名:多数插座 on,其余按设备属性表配
+    prop: str = 'on'             # on/off property name: 'on' for most sockets, others per the device spec
 
 
 class PowerCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
     """[power] 电源:两种方式的键共存一份(method 选插件,未用到的键无害)"""
 
-    method: str = 'command'        # command(缺省)| mijia(需 pip install 'boardctl[mijia]')
-    reset_delay: float = 3.0       # 断电→上电间隔秒(节拍编排住板域)
-    on_cmd: str | None = None      # command 方式的开/关/查命令
+    method: str = 'command'        # command (default) | mijia (needs pip install 'boardctl[mijia]')
+    reset_delay: float = 3.0       # seconds between power-off and power-on (cadence lives in the board domain)
+    on_cmd: str | None = None      # on/off/status commands for the command method
     off_cmd: str | None = None
     status_cmd: str | None = None
-    mijia: MijiaCfg = MijiaCfg()   # mijia 方式的参数
+    mijia: MijiaCfg = MijiaCfg()   # parameters for the mijia method
 
 
 class TftpCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
     """[tftp] tftp 传输:文件就位方式由 method 显式声明"""
 
-    method: str = 'remote'         # remote: scp 到远端 tftp 服务器
-                                   # external: 本机已有常驻 tftpd,只落文件免特权
-    ssh_host: str = ''             # method=remote 时的 ssh 别名(~/.ssh/config)
+    method: str = 'remote'         # remote: scp to a remote tftp server
+                                   # external: a resident tftpd already serves this host; just stage the file, no privileges
+    ssh_host: str = ''             # ssh alias for method=remote (from ~/.ssh/config)
     remote_dir: str = ''
-    local_dir: str = 'tftpboot'    # method=external 时的 tftp 根目录
+    local_dir: str = 'tftpboot'    # tftp root dir for method=external
 
 
 class LoadyCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
     """[loady] loady(Ymodem)传输"""
 
-    sender: str = ''               # Ymodem 发送器;空则自动查找(Arch: lrzsz-sb,Debian: sb)
+    sender: str = ''               # Ymodem sender; empty = autodetect (Arch: lrzsz-sb, Debian: sb)
 
 
 _PosFloat = Annotated[float, msgspec.Meta(ge=0)]
@@ -77,27 +77,27 @@ class RunTarget(msgspec.Struct, forbid_unknown_fields=True):
     报错文案比 schema 校验更友好)。
     """
 
-    # 是什么:描述、文件、传输与启动方式
+    # what it is: description, file, transport and boot mode
     desc: str | None = None
     file: str | None = None
-    method: str | None = None       # 传输插件名(tftp/loady/...)
-    mode: str | None = None         # 启动模式(uboot 缺省/console/watch)
+    method: str | None = None       # transport plugin name (tftp/loady/...)
+    mode: str | None = None         # boot mode (uboot default/console/watch)
 
-    # 怎么执行:cmd 模板及其变量
+    # how to execute: cmd template and its variables
     cmd: str | None = None
-    addr: str | None = None         # 加载地址,缺省 uboot.load_addr
-    entry: str | None = None        # 跳转地址,缺省 addr
-    initrd: str | None = None       # 初始 ramdisk
-    fdt: str | None = None          # 设备树
+    addr: str | None = None         # load address, defaults to uboot.load_addr
+    entry: str | None = None        # entry address, defaults to addr
+    initrd: str | None = None       # initial ramdisk
+    fdt: str | None = None          # device tree
 
-    # 执行控制
+    # execution control
     reset_before: bool | None = None
     after: Literal['off', 'reset', 'none'] | None = None
     timeout: _PosFloat | None = None
     fail_linger: _PosFloat | None = None
     interactive: bool | None = None
 
-    # 断言:正向子串、正向正则、负向正则
+    # assertions: positive substrings, positive regexes, negative regexes
     expect: list[str] = msgspec.field(default_factory=list)
     expect_re: list[str] = msgspec.field(default_factory=list)
     fail_re: list[str] = msgspec.field(default_factory=list)
@@ -110,7 +110,7 @@ class BoardCfg(msgspec.Struct):
     description: str = ''
     ssh_host: str = ''
 
-    # 各段:形状与默认值统一在此声明(单一来源;插件按属性自取所需段)
+    # sections: shapes and defaults declared here once (single source; plugins take what they need by attribute)
     serial: SerialCfg = SerialCfg()
     console: ConsoleCfg = ConsoleCfg()
     uboot: UbootCfg = UbootCfg()
@@ -118,5 +118,5 @@ class BoardCfg(msgspec.Struct):
     tftp: TftpCfg = TftpCfg()
     loady: LoadyCfg = LoadyCfg()
 
-    # 启动目标:键是用户起的目标名,天然 dict;值形状见 RunTarget
+    # run targets: keys are user-chosen names, naturally a dict; value shape in RunTarget
     run: dict[str, RunTarget] = msgspec.field(default_factory=dict)

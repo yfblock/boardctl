@@ -20,7 +20,7 @@ def _port_listeners(port, files=('/proc/net/udp', '/proc/net/udp6')):
     for f in files:
         try:
             with open(f) as fh:
-                next(fh, None)   # 表头
+                next(fh, None)   # header line
                 for line in fh:
                     cols = line.split()
                     if len(cols) > 1 and ':' in cols[1]:
@@ -66,8 +66,10 @@ class TftpTransport(Transport):
                          f'一次性修复: ssh -t {ssh} "sudo chown $USER {rdir}"\n'
                          '或该目标 method = "loady"(免权限,速度较慢)')
         elif method == 'external':
-            # 常驻 tftpd 已在本机服务 UDP 69:boardctl 只落文件,服务器是否在跑
-            # 由声明者负责——探测端口属于猜测意图,不猜(仅提醒一句疑似没在跑)
+            # a resident tftpd already serves UDP 69 on this host: boardctl
+            # only stages the file; whether the server runs is the declarer's
+            # business — probing the port would guess intent, so don't (just a
+            # one-line heads-up if it looks down)
             local_dir = os.path.abspath(t.local_dir)
             _drop_into(local_dir, path, fname)
             if os.path.exists('/proc/net/udp') and not _port_listeners(69):
@@ -92,8 +94,9 @@ class TftpTransport(Transport):
         if self.cfg.uboot.ensure_server_ip and server_ip:
             s.cmd(f'setenv serverip {server_ip}')
         out, hit = s.cmd(f'tftpboot {addr} {fname}', timeout=60)
-        # 成功不报告:回显(tap 即捕即显)里已有 tftpboot 行与 Bytes transferred;
-        # 只有本地才有的知识(文件大小核对)或失败判定才开口
+        # success stays silent: the echo (shown live by the tap) already has
+        # the tftpboot line and Bytes transferred; only locally-known facts
+        # (size check) or failure verdicts get printed
         m = re.search(r'Bytes transferred = (\d+)', out)
         if m:
             actual = os.path.getsize(path)

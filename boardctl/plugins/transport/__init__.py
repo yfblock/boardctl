@@ -21,7 +21,7 @@ class Transport(ABC):
     """传输方式抽象:子类实现 send,经 [run.*].method / method 选择——
     封装 = 各传输细节藏在类里;多态 = 不同子类同一接口"""
 
-    NAME = None            # 注册名(子类必填),对应 [run.*].method
+    NAME = None            # registry name (subclasses must set), matches [run.*].method
 
     @abstractmethod
     def send(self, channel, path, addr):

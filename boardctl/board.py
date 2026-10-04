@@ -26,11 +26,11 @@ class Board:
     def __init__(self, cfg):
         self.cfg = cfg
         self.name = cfg.name
-        self.serial = SerialChannel.from_cfg(cfg)   # 一块板 ↔ 一截串口([serial] 段)
-        self.stream = ConsoleStream(self.serial)    # 读侧唯一归捕获线程
-        self.power = Power(cfg)                     # 一块板 ↔ 一个电源([power] 段)
-        self.console = Console.from_cfg(cfg)        # 一块板 ↔ 一个控制台([console] 段)
-        self._display = None    # 程序化显示出口(run_collect);None = stdout 实时
+        self.serial = SerialChannel.from_cfg(cfg)   # one board ↔ one serial channel ([serial] section)
+        self.stream = ConsoleStream(self.serial)    # the read side belongs solely to the capture thread
+        self.power = Power(cfg)                     # one board ↔ one power object ([power] section)
+        self.console = Console.from_cfg(cfg)        # one board ↔ one console ([console] section)
+        self._display = None    # programmatic display sink (run_collect); None = live stdout
 
     def __enter__(self):
         self.stream.start()
@@ -49,7 +49,7 @@ class Board:
         """在板的常驻捕获流上开一个控制台会话(借用,不持有)"""
         return self.console.session(self.stream)
 
-    # ---- 显示(tap):挂捕获事件,即捕即显 ----
+    # ---- display (tap): hooked on capture events, shown as captured ----
     def set_display(self, out):
         """程序化调用(run_collect/MCP)换显示出口:设备输出写进 out 而
         非 stdout——服务进程(MCP)的 stdout 是协议通道,设备字节不得
@@ -75,7 +75,7 @@ class Board:
         print('上电...', flush=True)
         if note:
             print(note, flush=True)
-        self.stream.set_tap(self._show)   # 提示已落屏,此后上电字节即捕即显
+        self.stream.set_tap(self._show)   # the notice has landed; power-on bytes display live from here
         self.power.on()
 
     def cold_boot(self, boot_timeout=60):
@@ -97,14 +97,15 @@ class Board:
         (故不能复用 cold_boot:轮询等提示符会周期性发 Ctrl-C)。
         清噪 = 内核缓冲 drain + 捕获日志 clear:上电后收到的第一个字节
         就是启动输出(捕获与显示的起点都是上电)"""
-        self.stream.set_tap(None)   # 断电窗口(含上轮残留):线路噪声不上屏
+        self.stream.set_tap(None)   # power-off window (incl. last round's leftovers): line noise stays off screen
         print('断电...', flush=True)
         self.power.off()
         time.sleep(self.power.reset_delay)
-        self.serial.drain()     # 内核接收缓冲里的断电噪声
-        self.stream.clear()     # 捕获日志与解码残态:观察起点 = 上电
-        # 提示先落屏再挂显示(同冷启动纪律):上电即出 SPL 字节,
-        # 提示行不被撕进字节流中间
+        self.serial.drain()     # power-off noise still in the kernel receive buffer
+        self.stream.clear()     # capture log and decoder residue: observation starts at power-on
+        # the notice lands on screen before the display attaches (same
+        # cold-boot discipline): SPL bytes arrive at power-on without tearing
+        # the notice line into the byte stream
         print('上电(静默,不写串口)...', flush=True)
         self.stream.set_tap(self._show)
         self.power.on()

@@ -24,7 +24,7 @@ class UbootMode(RunMode):
         self.cfg = cfg
 
     def launch(self, runner):
-        board, name, t = runner.board, runner.name, runner.t   # 该 runner 的对象数据
+        board, name, t = runner.board, runner.name, runner.t   # this runner's object data
         cmdline = _expand(self.cfg, name, t) if t.cmd else None
 
         if t.reset_before:
@@ -39,9 +39,9 @@ class UbootMode(RunMode):
             path = os.path.join(BASE_DIR, path)
         if not os.path.isfile(path):
             sys.exit(f'文件不存在: {path}(先构建?)')
-        addr = t.addr or self.cfg.uboot.load_addr   # 加载地址(跳转地址 {entry} 由 cmd 模板取)
+        addr = t.addr or self.cfg.uboot.load_addr   # load address (entry {entry} comes from the cmd template)
         method = t.method or 'tftp'
-        from .. import TRANSPORT   # 函数内 import:注册表由插件包 __init__ 填充
+        from .. import TRANSPORT   # function-local import: the registry is filled by the plugins package __init__
         transport = TRANSPORT.get(method)
         if transport is None:
             sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
@@ -55,7 +55,7 @@ class UbootMode(RunMode):
             return None, None, 'loaded'
 
         print(f'[{name}] 执行: {cmdline}', flush=True)
-        s = board.session()   # 同一条捕获流:传输、执行不分家
+        s = board.session()   # the same capture stream: transport and execution share it
         ok, _ = s.wait_prompt()
         if not ok:
             sys.exit('等待 U-Boot 提示符超时')

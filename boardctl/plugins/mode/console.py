@@ -14,7 +14,7 @@ class ConsoleMode(RunMode):
         self.cfg = cfg
 
     def launch(self, runner):
-        board, name, t = runner.board, runner.name, runner.t   # 该 runner 的对象数据
+        board, name, t = runner.board, runner.name, runner.t   # this runner's object data
         for k in ('file', 'method', 'addr', 'entry'):
             if getattr(t, k):
                 sys.exit(f'run.{name}(mode=console)不认 {k}:控制台模式只执行命令,'
@@ -28,7 +28,7 @@ class ConsoleMode(RunMode):
             board.cold_boot()
 
         print(f'[{name}] 执行: {cmdline}', flush=True)
-        return board.stream, cmdline, None   # cold_boot 已确认提示符,流式引擎自己标记水位
+        return board.stream, cmdline, None   # cold_boot already confirmed the prompt; the streaming engine marks its own watermark
 
 
 PLUGIN = ConsoleMode

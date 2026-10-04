@@ -32,11 +32,13 @@ class LoadyTransport(Transport):
         if not ok:
             sys.exit('等待 U-Boot 提示符超时,设备可能不在 U-Boot 命令行')
         channel.write(f'loady {addr}\r')
-        time.sleep(1.5)  # 等设备进入 Ymodem 接收态
+        time.sleep(1.5)  # wait for the device to enter Ymodem receive mode
 
-        # 把串口 fd 借给发送器:捕获线程先让位(park),借出期间的 Ymodem
-        # 协议字节归发送器、不进捕获日志;resume 后剩余字节无缝接上
-        # (清 O_NONBLOCK 等底层细节是串口域 SerialChannel 的职责,插件不碰)
+        # lend the serial fd to the sender: the capture thread stands down
+        # first (park); Ymodem protocol bytes during the lend belong to the
+        # sender and stay out of the capture log; after resume the remaining
+        # bytes pick up seamlessly (low-level details like clearing O_NONBLOCK
+        # are the serial-domain SerialChannel's job, not the plugin's)
         channel.park()
         try:
             fd = channel.blocking_fd()
@@ -56,9 +58,10 @@ class LoadyTransport(Transport):
             channel.resume()
         tail, _ = s.read_until(s.prompt, 10)
         print(err.decode('utf-8', 'replace').strip())
-        # 串口侧输出不重打:tap 已即捕即显(loady 回显在借出前落日志,
-        # Total Size 在 resume 后无缝接上——全程都在显示);成功不报告,
-        # 只有本地才有的知识(文件大小核对)或失败判定才开口
+        # serial-side output isn't reprinted: the tap already shows it live
+        # (the loady echo lands in the log before the lend, Total Size picks
+        # up after resume — on screen throughout); success stays silent, only
+        # locally-known facts (size check) or failure verdicts get printed
         m = re.search(r'Total Size\s*=\s*(0x[0-9a-fA-F]+|\d+)', tail)
         if m:
             size = int(m.group(1), 0)

@@ -32,7 +32,7 @@ class CommandPower(PowerDevice):
         status = self.cfg.power.status_cmd
         if status:
             run_shell(self.cfg, status, check=False)
-        return None   # 任意命令的输出无法可靠解析为 bool
+        return None   # arbitrary command output can't be reliably parsed into a bool
 
 
 PLUGIN = CommandPower

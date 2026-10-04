@@ -54,7 +54,7 @@ class RunMode(ABC):
     传输与否/命令形态藏在类里;多态 = runner 按 [run.*].mode 选子类,
     流式/断言/收尾共用"""
 
-    NAME = None            # 注册名(子类必填),对应 [run.*].mode
+    NAME = None            # registry name (subclasses must set), matches [run.*].mode
 
     @abstractmethod
     def launch(self, runner):

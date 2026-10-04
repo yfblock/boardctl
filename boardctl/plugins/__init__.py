@@ -16,13 +16,13 @@ import pkgutil
 
 from . import mode, power, transport
 
-#: 传输插件注册表 {NAME: Transport 子类},接口见 transport/__init__.py
+#: transport plugin registry {NAME: Transport subclass}; interface in transport/__init__.py
 TRANSPORT = {}
 
-#: 电源插件注册表 {NAME: PowerDevice 子类},接口见 power/__init__.py
+#: power plugin registry {NAME: PowerDevice subclass}; interface in power/__init__.py
 POWER = {}
 
-#: 启动模式插件注册表 {NAME: RunMode 子类},接口见 mode/__init__.py
+#: boot-mode plugin registry {NAME: RunMode subclass}; interface in mode/__init__.py
 MODE = {}
 
 

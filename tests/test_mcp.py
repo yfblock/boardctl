@@ -31,9 +31,9 @@ async def main():
 
             r = await session.call_tool('ls_boards', {})
             text = r.content[0].text if r.content else ''
-            assert 'example' in text or 'sg2002' in text, text  # 包内置示例或用户板
+            assert 'example' in text or 'sg2002' in text, text  # bundled example or a user board
 
-            # 错误路径(不触碰硬件)
+            # error path (no hardware touched)
             r = await session.call_tool('run_target', {'board': 'no-such', 'target': 'x'})
             ok = getattr(r, 'isError', False) or any(
                 '未知开发板' in getattr(c, 'text', '') for c in (r.content or []))

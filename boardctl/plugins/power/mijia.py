@@ -14,8 +14,9 @@ class MijiaPower(PowerDevice):
     NAME = 'mijia'
 
     _lock = threading.Lock()
-    _dev_cache = {}   # (did, dev_name) -> mijiaDevice;类属性:进程级缓存,
-                      # 跨实例共享(避免每次操作都拉设备列表)
+    _dev_cache = {}   # (did, dev_name) -> mijiaDevice; class attribute: a
+                      # process-level cache shared across instances (avoids
+                      # re-fetching the device list on every call)
 
     def __init__(self, cfg):
         self.cfg = cfg

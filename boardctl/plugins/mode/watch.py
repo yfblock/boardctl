@@ -14,14 +14,14 @@ class WatchMode(RunMode):
         self.cfg = cfg
 
     def launch(self, runner):
-        board, name, t = runner.board, runner.name, runner.t   # 该 runner 的对象数据
+        board, name, t = runner.board, runner.name, runner.t   # this runner's object data
         for k in ('file', 'cmd'):
             if getattr(t, k):
                 sys.exit(f'run.{name}(mode=watch)为被动模式,不认 {k}'
                          '(板子自行完成传输与执行)')
         if t.reset_before:
             print(f'[{name}] 冷启动(静默:断电->上电,不写串口)', flush=True)
-            board.quiet_boot()   # 内部清噪+上电:捕获日志的起点即上电
+            board.quiet_boot()   # noise clearing + power-on inside: the capture log starts at power-on
         print(f'[{name}] 被动观察(mode=watch:不发送任何命令)', flush=True)
         return board.stream, None, None
 

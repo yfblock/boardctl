@@ -14,10 +14,10 @@ import msgspec
 
 from . import schema
 
-# 项目根目录(本包的上一级):开发运行时 boards/、run.sh 等在这里
+# project root (one level above this package): boards/, run.sh etc. live here in dev runs
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# 随包分发的示例板卡目录(仅作模板兜底,优先级最低)
+# example boards dir shipped with the package (template fallback only, lowest priority)
 BUNDLED_BOARDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'boards')
 
 

@@ -14,8 +14,8 @@ class Power:
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.method = cfg.power.method   # 缺省 command(schema 声明)
-        from .plugins import POWER   # 函数内 import:避免 board→power→plugins→插件→board 环
+        self.method = cfg.power.method   # defaults to command (declared in schema)
+        from .plugins import POWER   # function-local import: avoids a board→power→plugins→plugin→board cycle
         cls = POWER.get(self.method)
         if cls is None:
             sys.exit(f'未知电源插件 {self.method!r},可用: {" ".join(sorted(POWER)) or "(无)"}')

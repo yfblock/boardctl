@@ -20,7 +20,7 @@ from msgspec.structs import replace
 from .board import Board
 from .plugins import MODE
 
-QUIT_BYTE = 0x1C   # 交互模式下退出
+QUIT_BYTE = 0x1C   # quit key in interactive mode
 
 
 def _positives_satisfied(t, buf):
@@ -63,7 +63,7 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
 
     deadline = None if (interactive and sys.stdin.isatty()) else time.monotonic() + timeout
     fail_deadline = None
-    linger = max(0.0, float(2 if t.fail_linger is None else t.fail_linger))   # fail 命中后的续收秒数
+    linger = max(0.0, float(2 if t.fail_linger is None else t.fail_linger))   # seconds of extra capture after a fail hit
     raw = False
 
     def _ended(text):
@@ -71,7 +71,7 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
             return True
         return not raw and (_fail_hit(t, text) or _positives_satisfied(t, text))
 
-    if deadline is None:  # 交互模式:raw 终端 + Ctrl-\ 退出
+    if deadline is None:  # interactive mode: raw terminal + Ctrl-\ to quit
         import termios
         import tty
         old_attrs = termios.tcgetattr(sys.stdin.fileno())
@@ -81,7 +81,7 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
               end='', flush=True)
     try:
         while True:
-            if fail_deadline is not None:   # 止损续收窗口:只收输出,不再判定
+            if fail_deadline is not None:   # fail-linger window: capture output only, no more judging
                 ch.wait(lambda _t, fd=fail_deadline: time.monotonic() >= fd,
                         since, max(0.0, fail_deadline - time.monotonic()))
                 return ch.text(since), 'fail'
@@ -97,7 +97,7 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
                     fail_deadline = time.monotonic() + linger
                     continue
                 return buf, 'matched'
-            if deadline is None:   # 交互:读侧在捕获线程,此处只转发键盘
+            if deadline is None:   # interactive: reading happens in the capture thread; only forward keys here
                 r, _, _ = select.select([sys.stdin], [], [], 0)
                 if r:
                     b = os.read(sys.stdin.fileno(), 1024)
@@ -148,8 +148,9 @@ class Runner:
         self.t = t
 
     def _finish(self):
-        # 收尾:off 断电 | reset 重启回提示符 | none 保持现状(缺省)。
-        # off/reset 经板域方法:显示 tap 先摘再断电(线路噪声不上屏)
+        # after-handling: off powers down | reset reboots back to the prompt |
+        # none keeps state (default). off/reset go through board-domain methods:
+        # the display tap is detached before cutting power (line noise stays off screen)
         t, name = self.t, self.name
         after = t.after or 'none'
         try:
@@ -160,7 +161,7 @@ class Runner:
             elif after == 'reset':
                 print(f'[{name}] 输出结束,重启回提示符(after=reset)', flush=True)
                 self.board.reboot()
-        except Exception as e:   # 收尾失败不掩盖执行阶段的原始异常
+        except Exception as e:   # a finish failure must not mask the original execute-phase exception
             print(f'[{name}] 收尾(after={after})失败: {e}', file=sys.stderr, flush=True)
 
     def run(self):
@@ -178,8 +179,8 @@ class Runner:
                 sys.exit(f'未知启动模式 {mode_name!r},可用: {" ".join(sorted(MODE)) or "(无)"}')
             timeout = float(15 if t.timeout is None else t.timeout)
             interactive = bool(t.interactive)
-            ch, cmdline, done = mode(cfg).launch(self)   # 特定对象 = 该目标的 runner
-            if done is not None:   # launch 已自行收束(如 uboot 只加载不执行)
+            ch, cmdline, done = mode(cfg).launch(self)   # the specific object = this target's runner
+            if done is not None:   # launch already concluded itself (e.g. uboot loads without executing)
                 return True, done
             out, ended = _stream_run(ch, cmdline, self.board.prompt,
                                      t, interactive, timeout)
@@ -213,10 +214,10 @@ def do_run(cfg, name, repeat=1):
     total = max(1, int(repeat))
     if total > 1 and not t.reset_before:
         print(f'[{name}] repeat>1,自动启用 reset_before(每轮冷启动)', flush=True)
-        t = replace(t, reset_before=True)   # 复制注入,不污染原配置
+        t = replace(t, reset_before=True)   # copy-and-inject; the original config stays untouched
 
-    with Board(cfg) as board:   # 板持有唯一串口通道,结束时关
-        runner = Runner(board, name, t)   # 一块板 ↔ 多个 runner(每目标一个)
+    with Board(cfg) as board:   # the board owns the single serial channel; closed on exit
+        runner = Runner(board, name, t)   # one board ↔ many runners (one per target)
         results = []
         for i in range(1, total + 1):
             if total > 1:
@@ -249,7 +250,7 @@ def run_collect(cfg, name, repeat=1, tail_lines=60):
         rounds = []
         for i in range(1, total + 1):
             buf = io.StringIO()
-            board.set_display(buf)   # 本轮设备输出(tap 显示)也进 buf
+            board.set_display(buf)   # this round's device output (tap display) goes into buf too
             ok, ended, err = False, 'none', None
             try:
                 with contextlib.redirect_stdout(buf):

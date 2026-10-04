@@ -24,19 +24,19 @@ class ConsoleStream:
     """常驻捕获流:读线程 + 捕获日志 + 水位等待;写与 fd 借出直通底层通道"""
 
     def __init__(self, channel):
-        self.channel = channel          # SerialChannel 形状(read/write/fd)
+        self.channel = channel          # SerialChannel shape (read/write/fd)
         self._cond = threading.Condition()
-        self._log = ''                  # 捕获日志(解码后的累计文本)
+        self._log = ''                  # capture log (accumulated decoded text)
         self._decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
         self._thread = None
         self._stop = False
-        self._parked = False            # fd 借出期:读线程让位
-        self._paused = False            # 读线程已确认退出 read(借出方握手)
-        self._error = None              # 读线程的致命错误(桥断开等),等待者代抛
-        self._tap = None                # 显示回调:读线程即捕即显("中断中显示")
-        self._shown = 0                 # 显示水位:已送进 tap 的日志长度
+        self._parked = False            # fd-lend period: reader thread stands down
+        self._paused = False            # reader confirmed out of read (handshake with the borrower)
+        self._error = None              # fatal reader error (bridge down etc.), re-raised on waiters
+        self._tap = None                # display callback: shown as captured, in the reader thread
+        self._shown = 0                 # display watermark: log length already fed to the tap
 
-    # ---- 生命周期 ----
+    # ---- lifecycle ----
     def start(self):
         if self._thread is not None:
             return
@@ -68,9 +68,9 @@ class ConsoleStream:
                         if self._stop:
                             return
                         continue
-                data = self.channel.read(256)   # 不持锁读,append 时再上锁
+                data = self.channel.read(256)   # read without the lock; re-acquire to append
                 if data:
-                    tap, chunk = None, ''   # 解码可能为空(多字节拆在两次 read 间)
+                    tap, chunk = None, ''   # decode may be empty (multi-byte char split across reads)
                     with self._cond:
                         text = self._decoder.decode(data)
                         if text:
@@ -81,15 +81,15 @@ class ConsoleStream:
                             self._cond.notify_all()
                     if tap is not None and chunk:
                         try:
-                            tap(chunk)  # 不持锁回调:显示阻塞不拖等待者/借出握手
+                            tap(chunk)  # callback without the lock: slow display can't stall waiters/lend handshake
                         except Exception:
-                            pass        # 显示故障不杀死捕获线程
-        except Exception as e:   # 桥断开/通道异常:等待者不该干等超时,代抛
+                            pass        # a display fault must not kill the capture thread
+        except Exception as e:   # bridge down/channel error: waiters shouldn't sit out the timeout, re-raise
             with self._cond:
                 self._error = e
                 self._cond.notify_all()
 
-    # ---- 出站与 fd(直通通道;读侧唯一归捕获线程) ----
+    # ---- outbound & fd (straight to the channel; the read side belongs solely to the capture thread) ----
     def write(self, data):
         """写字节到通道;设备对输入的回显会作为入站字节自然进捕获日志"""
         if isinstance(data, str):
@@ -103,7 +103,7 @@ class ConsoleStream:
     def blocking_fd(self):
         return self.channel.blocking_fd()
 
-    # ---- 捕获日志与等待 ----
+    # ---- capture log & waiting ----
     def mark(self):
         """当前水位:此后 text()/wait() 从这里起算"""
         with self._cond:
@@ -160,7 +160,7 @@ class ConsoleStream:
             self._shown = 0
             self._decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
 
-    # ---- fd 借出配合(loady 的 Ymodem) ----
+    # ---- fd lending support (Ymodem for loady) ----
     def park(self):
         """借出前调用:读线程确认已退出 read 才返回——此后字节全归借用方,
         不进捕获日志"""

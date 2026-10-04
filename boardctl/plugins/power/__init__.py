@@ -19,7 +19,7 @@ class PowerDevice(ABC):
     """电源设备抽象:子类实现 on/off/status,经 [power].method 选择——
     封装 = 各插件细节藏在类里;多态 = 不同子类同一接口"""
 
-    NAME = None            # 注册名(子类必填),对应 [power].method
+    NAME = None            # registry name (subclasses must set), matches [power].method
 
     @abstractmethod
     def on(self):
