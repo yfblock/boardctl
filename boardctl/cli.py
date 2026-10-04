@@ -19,6 +19,8 @@ from typing import Annotated, Literal
 
 import cyclopts
 from cyclopts import Parameter
+from cyclopts.help import DefaultFormatter, PanelSpec
+from rich import box
 
 from . import __version__, power
 from .config import BUNDLED_BOARDS_DIR, available_boards, load_board
@@ -28,8 +30,12 @@ from .runner import do_run
 # result_action='return_value': on success app.meta() returns normally
 # instead of sys.exit(0) — keeps it embeddable (tests/programmatic calls);
 # exit codes are owned by each command's own sys.exit and error paths
+# help_formatter: same rich two-column layout, but the panel frame is the
+# invisible box.SIMPLE (no ╭─╮ borders; Commands/Parameters stay as headers)
 app = cyclopts.App(name='boardctl', version=__version__,
-                   result_action='return_value')
+                   result_action='return_value',
+                   help_formatter=DefaultFormatter(
+                       panel_spec=PanelSpec(box=box.SIMPLE)))
 
 
 class _Interrupted(BaseException):
