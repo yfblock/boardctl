@@ -481,7 +481,7 @@ finally:
 # 10. CLI 接线(cyclopts):类型即校验(repeat:int、power state:Literal,
 #     解析层拦截非法值),全局 -b 经 meta 入口前置;走 app.meta 真实入口,
 #     叶子打桩(do_run/板卡目录/Power 门面),不碰文件系统与硬件。
-#     业务在 Boardctl 类里,方法可直接调(绕过 CLI 层)
+#     命令函数即业务,也可绕过 CLI 层直调(cfg 作普通参数传入)
 from boardctl import cli as _cli  # noqa: E402
 
 _runcalls = []
@@ -554,11 +554,11 @@ class _FakeCliPower:
 with _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}), \
         _mock.patch.object(_cli.power, 'Power', _FakeCliPower):
     with contextlib.redirect_stdout(_io2.StringIO()):
-        _cli.Boardctl(board='ex').power('off')                    # 直接调方法
-        _cli.app.meta(['-b', 'ex', 'power', 'off'])               # 经 cyclopts
+        _cli.power_ctl('off', cfg={'name': 'ex', 'power': {}})     # 直调函数
+        _cli.app.meta(['-b', 'ex', 'power', 'off'])                # 经 cyclopts
     assert _pcalls == [('ex', 'off'), ('ex', 'off')], _pcalls
     with contextlib.redirect_stdout(_io2.StringIO()) as _so:
-        _cli.Boardctl(board='ex').power('status')   # status 打印开/关(cli 语义)
+        _cli.power_ctl('status', cfg={'name': 'ex', 'power': {}})  # status 打印开/关
     assert _so.getvalue() == '关\n', _so.getvalue()
 
 # 非法 power state:Literal 在解析层拒绝(方法内手工校验仍在,兜程序化调用)
@@ -663,7 +663,7 @@ with tempfile.TemporaryDirectory() as _td:
                                 lambda: {'m': str(Path(_td) / 'm.toml')}):
             with contextlib.redirect_stdout(_io2.StringIO()) as _so:
                 try:
-                    _cli.Boardctl().check()
+                    _cli.check()
                     _code = 0
                 except SystemExit as _e:
                     _code = _e.code
@@ -674,7 +674,7 @@ with tempfile.TemporaryDirectory() as _td:
                                 lambda: {'m': str(Path(_td) / 'm.toml')}):
             with contextlib.redirect_stdout(_io2.StringIO()) as _so:
                 try:
-                    _cli.Boardctl().check()
+                    _cli.check()
                     raise AssertionError('坏配置 check 应以退出码 1 结束')
                 except SystemExit as _e:
                     assert _e.code == 1, _e.code
