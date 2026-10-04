@@ -74,6 +74,10 @@ def _board_name(raw):
     return raw
 
 
+_NO_BOARDS = ('没有找到任何板卡配置。把板卡 TOML 放到 ~/.config/boardctl/\n'
+              '(模板可参考包内置示例 boardctl/boards/),或用 $BOARDCTL_BOARDS 指定目录')
+
+
 class Boardctl:
     """开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),
     板卡与启动目标配置见 ~/.config/boardctl,插件化传输/电源/启动模式"""
@@ -120,8 +124,7 @@ class Boardctl:
         """列出开发板"""
         boards = available_boards()
         if not boards:
-            sys.exit('没有找到任何板卡配置。把板卡 TOML 放到 ~/.config/boardctl/\n'
-                     '(模板可参考包内置示例 boardctl/boards/),或用 $BOARDCTL_BOARDS 指定目录')
+            sys.exit(_NO_BOARDS)
         for name in sorted(boards):
             cfg = load_board(name)
             desc = f' — {cfg["description"]}' if cfg['description'] else ''
@@ -132,20 +135,16 @@ class Boardctl:
         省略板名则校验全部;有无效配置时退出码 1
         """
         boards = available_boards()
-        if name is not None:
-            if name not in boards:
-                sys.exit(f'未知开发板 {name!r},可用: {" ".join(sorted(boards)) or "(无)"}')
-            boards = {name: boards[name]}
         if not boards:
-            sys.exit('没有找到任何板卡配置(~/.config/boardctl/ 或 $BOARDCTL_BOARDS)')
+            sys.exit(_NO_BOARDS)
         failed = 0
-        for n in sorted(boards):
+        for n in [name] if name is not None else sorted(boards):
             try:
-                load_board(n)
+                load_board(n)   # 未知板/配置无效的判断都在 load_board,报错自带板名
                 print(f'{n}: OK')
             except SystemExit as e:
                 failed += 1
-                print(f'{n}: 无效\n{e.code}')
+                print(e.code)
         if failed:
             sys.exit(1)
 

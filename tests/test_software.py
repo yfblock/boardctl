@@ -673,7 +673,7 @@ with tempfile.TemporaryDirectory() as _td:
                     raise AssertionError('坏配置 check 应以退出码 1 结束')
                 except SystemExit as _e:
                     assert _e.code == 1, _e.code
-        assert 'm: 无效' in _so.getvalue() and 'expcet' in _so.getvalue(), _so.getvalue()
+        assert '配置无效' in _so.getvalue() and 'expcet' in _so.getvalue(), _so.getvalue()
     finally:
         os.environ.pop('BOARDCTL_BOARDS', None)
 
