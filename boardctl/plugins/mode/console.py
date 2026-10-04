@@ -1,9 +1,11 @@
 """console boot mode: no transport, execute cmd directly once powered on to
 the prompt — the typical shape of prompt-driven consoles like a Linux
-shell. No address semantics: {addr}/{entry} are unavailable (unconfigured
-means an error naming the variable), variables come from the target's own
-keys. If a serial transport plugin aimed at shells ever appears (e.g.
-base64 paste), file/method can be opened up then."""
+shell.
+
+No address semantics: {addr}/{entry} are unavailable (unconfigured means
+an error naming the variable), variables come from the target's own keys.
+If a serial transport plugin aimed at shells ever appears (e.g. base64
+paste), file/method can be opened up then."""
 import sys
 
 from . import RunMode, expand_cmd, target_vars

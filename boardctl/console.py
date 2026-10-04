@@ -1,13 +1,17 @@
 """Console domain: the interactive payload running on the board — U-Boot,
 a Linux shell, any other CLI. boardctl has exactly one convention about the
 console: an interactive session with a prompt (prompt configurable, Ctrl-C
-can interrupt the current input line); everything prompt-driven (waiting for
-the prompt/executing commands/collecting output) unfolds on the resident
-capture stream's watermarks (stream.py) — the session only decides "where
-to count from, what to write, what to wait for"; byte reading belongs
-uniformly to the capture thread. U-Boot-specific load addresses, serverip,
-tftpboot/loady commands don't belong here — they live in the [uboot] config
-section and in transport plugins/cmd templates.
+can interrupt the current input line).
+
+Everything prompt-driven (waiting for the prompt/executing commands/
+collecting output) unfolds on the resident capture stream's watermarks
+(stream.py) — the session only decides "where to count from, what to
+write, what to wait for"; byte reading belongs uniformly to the capture
+thread.
+
+U-Boot-specific load addresses, serverip, tftpboot/loady commands don't
+belong here — they live in the [uboot] config section and in transport
+plugins/cmd templates.
 """
 
 

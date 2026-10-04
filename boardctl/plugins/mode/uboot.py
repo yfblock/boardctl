@@ -1,8 +1,10 @@
 """uboot boot mode (the default of [run.*].mode): cold boot -> transport
-plugin stages the file -> cmd executes. The concentration point of
-U-Boot-specific knowledge: the load-address default chain (addr <-
-uboot.load_addr, entry <- addr), the {addr}/{entry} template variables,
-waiting for the prompt after transport before executing."""
+plugin stages the file -> cmd executes.
+
+The concentration point of U-Boot-specific knowledge: the load-address
+default chain (addr <- uboot.load_addr, entry <- addr), the {addr}/{entry}
+template variables, waiting for the prompt after transport before
+executing."""
 import os
 import sys
 

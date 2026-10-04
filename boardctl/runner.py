@@ -185,11 +185,14 @@ class Runner:
         -> stream output in -> assert -> after-handling. The mode
         (uboot/console/watch/…) interprets how the target gets brought up;
         streaming/assertions/after-handling are shared across all modes.
+
         After-handling (after) sits in finally: transport failures, plugin
         sys.exit and exceptional exits run it too (after=none semantics
-        unchanged: keep state); returns (expect-verdict bool, end reason);
-        with no assertions configured the bool is always True; infrastructure
-        errors exit directly."""
+        unchanged: keep state).
+
+        Returns (expect-verdict bool, end reason); with no assertions
+        configured the bool is always True; infrastructure errors exit
+        directly."""
         cfg, name, t = self.cfg, self.name, self.t
         try:
             mode_name = t.mode or 'uboot'
@@ -251,12 +254,13 @@ def do_run(cfg, name, repeat=1):
 
 def run_collect(cfg, name, repeat=1, tail_lines=60):
     """Programmatically run a run target (for MCP/automation): captures
-    output, doesn't sys.exit, returns a structured result. The display sink
-    is swapped for a per-round buffer (board.set_display) — device output
-    (tap) and orchestration prints all go into buf, never landing on the
-    caller's stdout (MCP's stdout is a protocol channel); stderr isn't
-    captured (left for logs); infrastructure errors become that round's
-    error instead of raising."""
+    output, doesn't sys.exit, returns a structured result.
+
+    The display sink is swapped for a per-round buffer (board.set_display)
+    — device output (tap) and orchestration prints all go into buf, never
+    landing on the caller's stdout (MCP's stdout is a protocol channel);
+    stderr isn't captured (left for logs); infrastructure errors become
+    that round's error instead of raising."""
     targets = cfg.run
     if name not in targets:
         return {'error': f'undefined boot target {name!r}',

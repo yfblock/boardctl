@@ -128,11 +128,12 @@ class ConsoleStream:
     def wait(self, pred, since, timeout):
         """From watermark since, wait until the predicate holds: new bytes
         wake immediately (condition variable, no polling). Returns (window
-        text, whether it hit within the timeout). The predicate may also
-        express a time condition (e.g. expiry of the loss-stopping linger
-        window) — expiry is backstopped by the timeout wakeup.
-        Display doesn't live here: it hangs on capture events (set_tap),
-        waiters mind only the predicate."""
+        text, whether it hit within the timeout).
+
+        The predicate may also express a time condition (e.g. expiry of
+        the loss-stopping linger window) — expiry is backstopped by the
+        timeout wakeup. Display doesn't live here: it hangs on capture
+        events (set_tap), waiters mind only the predicate."""
         deadline = None if timeout is None else time.monotonic() + timeout
         with self._cond:
             while True:
@@ -153,10 +154,13 @@ class ConsoleStream:
         """Attach/detach the display callback (tap): fn(text) executes in the
         reader thread's context — shown as captured, "displayed from within
         the stream"; waiters mind only the predicate, no printing duty mixed
-        in. Before detaching (fn=None) the old callback first flushes the
-        undisplayed backlog — the display has no gap relative to capture; on
-        re-attach no replay of bytes captured while detached (power-off noise
-        isn't re-shown), display starts from the moment of attaching.
+        in.
+
+        Before detaching (fn=None) the old callback first flushes the
+        undisplayed backlog — the display has no gap relative to capture;
+        on re-attach no replay of bytes captured while detached (power-off
+        noise isn't re-shown), display starts from the moment of attaching.
+
         Callback exceptions are swallowed: a display fault must not poison
         the capture thread or waiters."""
         with self._cond:

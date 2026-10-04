@@ -101,9 +101,11 @@ from boardctl.stream import ConsoleStream as _Stream  # noqa: E402
 class _FakeSer:
     """Fake serial: reads stay empty before power_on (simulating the silence
     of power-off); after power-on it emits chunks in order, read_delay
-    seconds between blocks; writes are recorded. The watermark is taken only
-    at the engine entry — a meaningful first block must come after it;
-    read_delay 0.03 exists for exactly that margin"""
+    seconds between blocks; writes are recorded.
+
+    The watermark is taken only at the engine entry — a meaningful first
+    block must come after it; read_delay 0.03 exists for exactly that
+    margin"""
 
     def __init__(self, chunks=(), powered=False, read_delay=0.03):
         self.pending = list(chunks)
@@ -194,11 +196,12 @@ _pcalls = []
 class _FakeBoard:
     """Board stub: serial is the fake serial (injectable), the capture
     stream is real; records which path a cold boot took (with after=none
-    power isn't touched). The cold-boot/quiet-boot/power-off stubs also
-    simulate power-on and mirror the real Board's display surface (tap
-    attaches before power-on, detaches before power-off, set_display swaps
-    in a programmatic sink) — the fake serial only emits bytes after
-    power_on"""
+    power isn't touched).
+
+    The cold-boot/quiet-boot/power-off stubs also simulate power-on and
+    mirror the real Board's display surface (tap attaches before power-on,
+    detaches before power-off, set_display swaps in a programmatic sink)
+    — the fake serial only emits bytes after power_on"""
 
     def __init__(self, cfg, ser=None):
         self.cfg = cfg

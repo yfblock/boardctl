@@ -1,9 +1,10 @@
 """Power domain: pure power actions (on/off/status), never touches the
-serial — "power on into an interactive state" (cold boot waiting for the
-prompt / quiet power-on) is the board domain's business in board.py, which
-composes this domain with the serial domain; the off→delay→on cadence
-orchestration also lives in the board domain (the display tap must attach
-before power-on); this domain only holds the cadence value (reset_delay).
+serial. "Power on into an interactive state" (cold boot waiting for the
+prompt / quiet power-on) and the off→delay→on cadence orchestration are
+the board domain's business in board.py, which composes this domain with
+the serial domain (the display tap must attach before power-on); this
+domain only holds the cadence value (reset_delay).
+
 Power is this domain's object-oriented abstraction: it wraps the
 PowerDevice plugin instance selected via [power].method with unified error
 handling — plugin-layer polymorphism = different subclasses, one interface;

@@ -1,10 +1,11 @@
 """watch boot mode: passive watching — the board does its own transport and
-execution (bootcmd/on-board automatic scripts), boardctl writes nothing the
-whole way: no commands sent, not even the Ctrl-C of a cold boot's
-prompt-wait (it would interrupt the board's flow). The capture stream is
-resident (the connection was established when Board was constructed); noise
-is cleared before the quiet power-on — boot output lands in the capture
-log in full from the very first byte."""
+execution (bootcmd/on-board automatic scripts); boardctl writes nothing
+the whole way: no commands sent, not even the Ctrl-C of a cold boot's
+prompt-wait (it would interrupt the board's flow).
+
+The capture stream is resident (the connection was established when Board
+was constructed); noise is cleared before the quiet power-on — boot
+output lands in the capture log in full from the very first byte."""
 import sys
 
 from . import RunMode

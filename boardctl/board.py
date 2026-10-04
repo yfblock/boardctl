@@ -72,15 +72,18 @@ class Board:
 
     def _power_cycle(self, note=None):
         """Power off -> delay -> power on (the cadence value is the power
-        domain's reset_delay). note is the notice line before power-on (the
-        cold boot's "waiting for console prompt"): the notice lands on
-        screen first, then the display attaches, then power-on — SPL bytes
-        come out the moment power applies, so the notice line can't get torn
-        into the middle of the byte stream, nor arrive later than any write
-        to the serial (the polling Ctrl-C lives in the wait loop after it).
-        The display detaches before power-off and attaches before power-on:
-        output from power-on is shown as captured, line noise in the
-        power-off window stays off screen"""
+        domain's reset_delay); note is the notice line before power-on
+        (the cold boot's "waiting for console prompt").
+
+        Ordering discipline: the notice lands on screen first, then the
+        display attaches, then power-on — SPL bytes come out the moment
+        power applies, so the notice line can't get torn into the middle
+        of the byte stream, nor arrive later than any write to the serial
+        (the polling Ctrl-C lives in the wait loop after it).
+
+        The display detaches before power-off and attaches before
+        power-on: output from power-on is shown as captured, line noise
+        in the power-off window stays off screen"""
         self.stream.set_tap(None)
         print('powering off...', flush=True)
         self.power.off()
@@ -94,10 +97,12 @@ class Board:
     def cold_boot(self, boot_timeout=60):
         """Power off → power on → poll for the console prompt (back to a
         clean interactive state from any state, whether the payload is
-        U-Boot, a Linux shell or another CLI). Boot output is shown as
-        captured (the tap attaches before power-on) — waiting is no longer a
-        black box. Polling periodically sends Ctrl-C to the serial to clear
-        leftover input — not usable for passive watching"""
+        U-Boot, a Linux shell or another CLI).
+
+        Boot output is shown as captured (the tap attaches before
+        power-on) — waiting is no longer a black box. Polling periodically
+        sends Ctrl-C to the serial to clear leftover input — not usable
+        for passive watching"""
         self._power_cycle(note='waiting for console prompt...')
         deadline = time.monotonic() + boot_timeout
         while time.monotonic() < deadline:
@@ -110,10 +115,12 @@ class Board:
         """Quiet power-on (mode=watch passive mode): off → delay → noise
         clear → on, without writing a single byte to the serial — the board
         runs its own automatic flow, any write would interrupt it (hence
-        cold_boot can't be reused: polling for the prompt periodically sends
-        Ctrl-C). Noise clear = kernel-buffer drain + capture-log clear: the
-        first byte received after power-on is boot output (capture and
-        display both start at power-on)"""
+        cold_boot can't be reused: polling for the prompt periodically
+        sends Ctrl-C).
+
+        Noise clear = kernel-buffer drain + capture-log clear: the first
+        byte received after power-on is boot output (capture and display
+        both start at power-on)"""
         self.stream.set_tap(None)   # power-off window (incl. last round's leftovers): line noise stays off screen
         print('powering off...', flush=True)
         self.power.off()
