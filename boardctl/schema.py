@@ -1,6 +1,6 @@
 """配置建模:msgspec.Struct 声明板卡 toml 的形状,加载即校验。
 
-核心默认值从此只在此处声明一份。建模三原则:
+核心默认值从此只在此处声明一份;`boardctl check` 即用此形状校验配置。
 
 - 严格与宽容分界:核心段([serial]/[console]/[uboot] 与 [run.*])开
   forbid_unknown_fields,拼错的键(如 expcet)当场报错;插件段与顶层
@@ -8,9 +8,6 @@
 - 缺省即缺省:可缺省字段建模为 None,加载后剥除(config._strip_none)。
   默认值的取舍留在消费端——如 runner 的 after 缺省逻辑带条件,数据层
   不替它决定。
-- 旧式写法建模前归一(config._normalize):[uboot].prompt 继承进
-  [console],断言键标量包列表;exec="watch" 由 runner 运行时转译,
-  这里只收留其类型。
 """
 from typing import Annotated, Literal
 
@@ -31,7 +28,6 @@ class UbootCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
     ip_addr: str = ''
     server_ip: str = ''
     ensure_server_ip: bool = False
-    prompt: str | None = None    # 旧式键:现归 [console],_normalize 自动继承
 
 
 _PosFloat = Annotated[float, msgspec.Meta(ge=0)]
@@ -49,7 +45,6 @@ class RunTarget(msgspec.Struct, forbid_unknown_fields=True):
     file: str | None = None
     method: str | None = None       # 传输插件名(tftp/loady/...)
     mode: str | None = None         # 启动模式(uboot 缺省/console/watch)
-    exec: str | None = None         # 旧式,仅剩合法值 "watch"(被动观察)
 
     # 怎么执行:cmd 模板及其变量
     cmd: str | None = None
@@ -60,7 +55,6 @@ class RunTarget(msgspec.Struct, forbid_unknown_fields=True):
 
     # 执行控制
     reset_before: bool | None = None
-    reset_after: bool | None = None     # 旧式键:after 的前身
     after: Literal['off', 'reset', 'none'] | None = None
     timeout: _PosFloat | None = None
     fail_linger: _PosFloat | None = None

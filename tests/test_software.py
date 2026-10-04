@@ -245,12 +245,6 @@ finally:
 assert ok and ended == 'matched' and _pcalls == ['quiet'], (ok, ended, _pcalls)
 assert _wser.written == b'', _wser.written   # 整链路零写入
 
-# 模式解析:mode 显式声明;旧 exec="watch" 等价(存量配置零改动);缺省 uboot
-assert _runner._resolve_mode('t', {}) == 'uboot'
-assert _runner._resolve_mode('t', {'exec': 'watch'}) == 'watch'
-assert _runner._resolve_mode('t', {'mode': 'console'}) == 'console'
-assert _runner._resolve_mode('t', {'mode': 'watch', 'exec': 'watch'}) == 'watch'
-
 # console 模式整链路:不传输,冷启动到提示符后直接执行 cmd(Linux shell 形态)
 _pcalls.clear()
 _cser = _FakeSer([b'ALL PASS\r\n', b'soph# '])
@@ -321,11 +315,11 @@ try:
 except SystemExit as e:
     assert 'gdb' in str(e.code) and 'uboot' in str(e.code), e.code
 
-# 被动模式拒绝 file(旧写法 exec="watch" 走同一条路——别名兼容)
+# 被动模式拒绝 file(watch 不传输,无文件语义)
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         _runner.Runner(_FakeBoard(_mincfg), 'watch-t',
-                       {'exec': 'watch', 'file': 'hello.bin', 'after': 'none'}).run()
+                       {'mode': 'watch', 'file': 'hello.bin', 'after': 'none'}).run()
     raise AssertionError('watch 带 file 应被拒绝')
 except SystemExit as e:
     assert 'file' in str(e.code), e.code
@@ -338,15 +332,6 @@ try:
     raise AssertionError('主动模式缺 file 应报错')
 except SystemExit as e:
     assert 'file' in str(e.code), e.code
-
-# 残留旧式 exec(除 watch)→ 指引改 mode/cmd
-try:
-    with contextlib.redirect_stdout(_io2.StringIO()):
-        _runner.Runner(_FakeBoard(_mincfg), 'go-t',
-                       {'exec': 'go', 'after': 'none'}).run()
-    raise AssertionError('旧式 exec=go 应被拒绝')
-except SystemExit as e:
-    assert 'cmd' in str(e.code), e.code
 
 # 6b. 常驻捕获原语:水位/事件等待/清零/fd 借出配合(park-resume 握手)
 _pser = _FakeSer([b'hello\r\n'], powered=True)
@@ -599,15 +584,15 @@ assert 'SYNOPSIS' in _so.getvalue(), _so.getvalue()
 
 # 11. 板卡配置目录:board_dir 直接放 *.toml(~/.config/boardctl,无 boards/ 子目录);
 #     $BOARDCTL_BOARDS 指向的目录里直放 toml 即被发现且优先(同名先到先得,
-#     不替换后续目录),加载照常合并默认值
+#     不替换后续目录),加载照常走 schema 校验与默认值
 with tempfile.TemporaryDirectory() as _td:
     (Path(_td) / 'x.toml').write_text('description = "t"\n[serial]\nurl = "socket://h:1"\n',
                                       encoding='utf-8')
     (Path(_td) / 'y.toml').write_text(
-        'description = "旧式"\n[uboot]\nprompt = "ub# "\nload_addr = "0x1"\n',
+        'description = "y"\n[console]\nprompt = "ub# "\n[uboot]\nload_addr = "0x1"\n',
         encoding='utf-8')
     (Path(_td) / 'z.toml').write_text(
-        '[console]\nprompt = "sh$ "\n[uboot]\nprompt = "=>"\n', encoding='utf-8')
+        '[console]\nprompt = "sh$ "\n', encoding='utf-8')
     (Path(_td) / 'example.toml').write_text('description = "覆盖同名内置示例"\n',
                                             encoding='utf-8')
     (Path(_td) / 'ignored.txt').write_text('not a board', encoding='utf-8')
@@ -619,27 +604,28 @@ with tempfile.TemporaryDirectory() as _td:
         assert 'ignored.txt' not in _boards
         _c = load_board('x')
         assert _c['serial']['url'] == 'socket://h:1'
-        assert _c['console']['prompt'] == '=>'       # DEFAULTS 照常合并
-        assert 'prompt' not in _c['uboot']           # 提示符已不归 [uboot]
-        _c = load_board('y')                         # 旧式:prompt 住 [uboot]
-        assert _c['console']['prompt'] == 'ub# '     # 无 [console] 时自动继承
-        _c = load_board('z')                         # 两边都有:[console] 优先
+        assert _c['console']['prompt'] == '=>'       # schema 默认值
+        assert 'prompt' not in _c['uboot']           # 提示符只归 [console]
+        _c = load_board('y')
+        assert _c['console']['prompt'] == 'ub# '     # 显式 [console] 即所配即所得
+        assert _c['uboot']['load_addr'] == '0x1'
+        _c = load_board('z')
         assert _c['console']['prompt'] == 'sh$ '
     finally:
         os.environ.pop('BOARDCTL_BOARDS', None)
 
-# 12. 配置建模(msgspec):加载即校验——拼错的键/非法枚举/类型/约束当场
-#     报错且带字段路径;断言标量归一成列表;缺省即缺省(None 剥除,消费端
-#     默认逻辑不变);插件段用户值真正到达(修 [loady] 从未被种子的静默丢失)
+# 12. 配置建模(msgspec):加载即校验——拼错的键/旧式键/非法枚举/类型/约束
+#     当场报错且带字段路径;缺省即缺省(None 剥除,消费端默认逻辑不变);
+#     插件段用户值真正到达;check 子命令按板汇总、退出码可用
 with tempfile.TemporaryDirectory() as _td:
     os.environ['BOARDCTL_BOARDS'] = _td
     try:
         def _toml(body):
             (Path(_td) / 'm.toml').write_text(body, encoding='utf-8')
 
-        _toml('[run.h]\nexpect = "X"\ntimeout = 8\n')
+        _toml('[run.h]\nexpect = ["X"]\ntimeout = 8\n')
         _c = load_board('m')
-        assert _c['run']['h']['expect'] == ['X'], _c['run']['h']       # 标量包列表
+        assert _c['run']['h']['expect'] == ['X'], _c['run']['h']
         assert _c['run']['h']['timeout'] == 8.0                         # int→float 强转
         assert 'after' not in _c['run']['h'], _c['run']['h']            # 缺省即缺省
         assert 'cmd' not in _c['run']['h']
@@ -653,6 +639,10 @@ with tempfile.TemporaryDirectory() as _td:
             ('[serial]\ntimeout = "abc"\n', '类型错误'),
             ('[run.h]\ntimeout = -5\n', '负超时'),
             ('[serial]\nurll = "x"\n', '核心段未知键'),
+            ('[run.h]\nexpect = "X"\n', '断言标量(须列表)'),
+            ('[uboot]\nprompt = "soph#"\n', '旧式 prompt(现归 [console])'),
+            ('[run.h]\nexec = "watch"\n', '旧式 exec(现归 mode)'),
+            ('[run.h]\nreset_after = true\n', '旧式 reset_after(现归 after)'),
         ]:
             _toml(_body)
             try:
@@ -660,6 +650,30 @@ with tempfile.TemporaryDirectory() as _td:
                 raise AssertionError(f'{_why}应被拒绝')
             except SystemExit as _e:
                 assert '配置无效' in str(_e), _e
+
+        # check 子命令:好配置逐板 OK、退出码 0;坏配置逐板报明细、退出码 1
+        # (mock 板列表保持封闭:不依赖本机 ~/.config 里恰好有什么配置)
+        _toml('[run.h]\nexpect = ["X"]\n')
+        with _mock.patch.object(_cli, 'available_boards',
+                                lambda: {'m': str(Path(_td) / 'm.toml')}):
+            with contextlib.redirect_stdout(_io2.StringIO()) as _so:
+                try:
+                    _cli.Boardctl().check()
+                    _code = 0
+                except SystemExit as _e:
+                    _code = _e.code
+        assert _code in (0, None), _code
+        assert 'm: OK' in _so.getvalue(), _so.getvalue()
+        _toml('[run.h]\nexpcet = ["X"]\n')
+        with _mock.patch.object(_cli, 'available_boards',
+                                lambda: {'m': str(Path(_td) / 'm.toml')}):
+            with contextlib.redirect_stdout(_io2.StringIO()) as _so:
+                try:
+                    _cli.Boardctl().check()
+                    raise AssertionError('坏配置 check 应以退出码 1 结束')
+                except SystemExit as _e:
+                    assert _e.code == 1, _e.code
+        assert 'm: 无效' in _so.getvalue() and 'expcet' in _so.getvalue(), _so.getvalue()
     finally:
         os.environ.pop('BOARDCTL_BOARDS', None)
 

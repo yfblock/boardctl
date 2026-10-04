@@ -21,15 +21,11 @@ from .plugins import MODE
 QUIT_BYTE = 0x1C   # 交互模式下退出
 
 
-def _as_list(v):
-    return [v] if isinstance(v, str) else (v or [])
-
-
 def _positives_satisfied(t, buf):
     """正向断言(expect 子串 + expect_re 正则)是否已全部命中;
     未配置正向断言时返回 False(不以 matched 结束,等提示符/超时)"""
-    subs = _as_list(t.get('expect'))
-    pats = _as_list(t.get('expect_re'))
+    subs = t.get('expect') or []
+    pats = t.get('expect_re') or []
     if not subs and not pats:
         return False
     for e in subs:
@@ -44,23 +40,10 @@ def _positives_satisfied(t, buf):
 def _fail_hit(t, buf):
     """负向断言 fail_re 是否命中(流式即时判负:一命中就收工,
     不等 timeout——panic 类故障立刻断电止损);明细由 evaluate 统一给出"""
-    for p in _as_list(t.get('fail_re')):
+    for p in t.get('fail_re') or []:
         if re.search(p, buf):
             return True
     return False
-
-
-def _resolve_mode(name, t):
-    """目标启动模式:[run.*].mode 显式声明;旧写法 exec="watch" 等价
-    mode="watch"(存量配置零改动);缺省 uboot"""
-    mode = t.get('mode')
-    exec_ = t.get('exec')
-    if exec_ is not None and exec_ != 'watch':
-        sys.exit(f'无效 exec: {exec_!r}(0.11.0 起执行命令改配 cmd 模板,'
-                 '如 cmd = "go {addr}";被动观察改配 mode = "watch")')
-    if exec_ == 'watch' and mode is None:
-        return 'watch'      # 旧写法,等价 mode = "watch"
-    return mode or 'uboot'
 
 
 def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
@@ -130,24 +113,22 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
 
 def evaluate(out, t):
     """断言输出。规则:
-    expect     子串列表,必须全部出现(向后兼容)
+    expect     子串列表,必须全部出现
     expect_re  正则列表,必须全部 re.search 命中
     fail_re    正则列表,必须全部不命中(如 panic/FAIL 自动判负)
     返回 (是否PASS, 问题摘要, 是否配置了断言)
     """
     problems = []
-    for e in _as_list(t.get('expect')):
+    for e in t.get('expect') or []:
         if e not in out:
             problems.append(f'expect 未出现: {e!r}')
-    for p in _as_list(t.get('expect_re')):
+    for p in t.get('expect_re') or []:
         if not re.search(p, out):
             problems.append(f'expect_re 未匹配: {p!r}')
-    for p in _as_list(t.get('fail_re')):
+    for p in t.get('fail_re') or []:
         if re.search(p, out):
             problems.append(f'fail_re 命中: {p!r}')
-    checked = bool(problems is not None and
-                   (_as_list(t.get('expect')) or _as_list(t.get('expect_re'))
-                    or _as_list(t.get('fail_re'))))
+    checked = bool(t.get('expect') or t.get('expect_re') or t.get('fail_re'))
     return (not problems), '; '.join(problems), checked
 
 
@@ -165,10 +146,10 @@ class Runner:
         self.t = t
 
     def _finish(self):
-        # 收尾:off 断电 | reset 重启回提示符 | none 保持现状(兼容旧的 reset_after 布尔)。
+        # 收尾:off 断电 | reset 重启回提示符 | none 保持现状(缺省)。
         # off/reset 经板域方法:显示 tap 先摘再断电(线路噪声不上屏)
         t, name = self.t, self.name
-        after = t.get('after', 'reset' if t.get('reset_after') else 'none')
+        after = t.get('after', 'none')
         try:
             if after == 'off':
                 print(f'[{name}] 断电收尾(after=off)', flush=True)
@@ -189,7 +170,7 @@ class Runner:
         基础设施错误直接退出。"""
         cfg, name, t = self.cfg, self.name, self.t
         try:
-            mode_name = _resolve_mode(name, t)
+            mode_name = t.get('mode') or 'uboot'
             mode = MODE.get(mode_name)
             if mode is None:
                 sys.exit(f'未知启动模式 {mode_name!r},可用: {" ".join(sorted(MODE)) or "(无)"}')
@@ -220,7 +201,7 @@ def do_run(cfg, name, repeat=1):
         print(f'{cfg["name"]} 可启动目标(boardctl run <名字>):')
         for k, t in targets.items():
             desc = t.get('desc', '')
-            what = t.get('cmd') or t.get('mode') or t.get('exec') or '(只加载)'
+            what = t.get('cmd') or t.get('mode') or '(只加载)'
             print(f'  {k:12} {what:26} {t.get("file", "")}  {desc}')
         return
     if name not in targets:

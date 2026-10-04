@@ -2,9 +2,9 @@
 
 - 发现:boards_dirs()/available_boards() 按 $BOARDCTL_BOARDS →
   ~/.config/boardctl → 包内置示例的优先级找板卡。
-- 加载(load_board):toml 解析 → 旧式写法归一 → msgspec 建模校验
-  (形状与核心默认值见 schema.py)→ 剥 None(缺省即缺省)→ 插件段
-  默认值合并(各插件 DEFAULTS,TOML 值优先)。
+- 加载(load_board):toml 解析 → msgspec 建模校验(形状与核心默认值
+  见 schema.py)→ 剥 None(缺省即缺省)→ 插件段默认值合并(各插件
+  DEFAULTS,TOML 值优先)。
 """
 import os
 import sys
@@ -51,24 +51,6 @@ def available_boards():
     return names
 
 
-def _normalize(data):
-    """旧式写法归一,让历史配置以新形状通过建模校验。
-
-    - prompt 原住在 [uboot],现归 [console]:无 [console] 段时继承;
-    - 断言键(expect/expect_re/fail_re)标量写法包成列表。
-    """
-    if 'console' not in data:
-        p = data.get('uboot', {}).get('prompt')
-        if p is not None:
-            data.setdefault('console', {})['prompt'] = p
-    for t in data.get('run', {}).values():
-        if isinstance(t, dict):
-            for k in ('expect', 'expect_re', 'fail_re'):
-                if isinstance(t.get(k), str):
-                    t[k] = [t[k]]
-    return data
-
-
 def _strip_none(o):
     """剥除 None 值。
 
@@ -87,7 +69,7 @@ def load_board(name):
     if name not in boards:
         sys.exit(f"未知开发板 {name!r},可用: {' '.join(sorted(boards)) or '(配置目录里没有任何板卡)'}")
     with open(boards[name], 'rb') as f:
-        data = _normalize(tomllib.load(f))
+        data = tomllib.load(f)
     data['name'] = name
     try:
         modeled = msgspec.convert(data, schema.BoardCfg, strict=False)

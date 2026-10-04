@@ -52,7 +52,7 @@ def ls_boards() -> str:
         lines.append(f"{name} — {cfg.get('description', '')}")
         for k, t in cfg.get('run', {}).items():
             lines.append(f"  目标 {k}: {t.get('desc', '')} "
-                         f"(cmd={t.get('cmd') or t.get('mode') or t.get('exec') or '(只加载)'}, method={t.get('method', 'tftp')})")
+                         f"(cmd={t.get('cmd') or t.get('mode') or '(只加载)'}, method={t.get('method', 'tftp')})")
     return '\n'.join(lines) or '(没有配置任何板卡;模板见包内置 example.toml)'
 
 

@@ -9,7 +9,7 @@ TOML 配置,**模块化 + 插件化**架构——一键全流程(冷启动 → �
 - 串口输出**从上电起即捕即显**(常驻捕获 + 显示挂在捕获事件上):
   启动日志、命令回显、传输与执行输出全程可见,无窗口遗漏
 - `power on|off|status`:手动电源控制/查询(经电源插件,run 全流程之外用)
-- 被动观察 `exec = "watch"`:板子自己跑自动流程(bootcmd/板上脚本)时,
+- 被动观察 `mode = "watch"`:板子自己跑自动流程(bootcmd/板上脚本)时,
   全程零写入——不传输、不发任何命令(连 Ctrl-C 都不发,免得打断),
   静默上电后从第一个字节开始收流,断言与收尾照常
 - 打断保证:Ctrl-C / kill 时若板在开机状态自动关机,程序结束后设备必为关
@@ -36,6 +36,7 @@ boardctl -b myboard run hello      # 全流程:开机→传输→执行→断言
 boardctl -b myboard run hello -r 10   # 10 轮压测,汇总 N/10 PASS
 boardctl -b myboard power status   # 查电源(开/关)
 boardctl -b myboard power off      # 手动关机(on 同理)
+boardctl check                     # 校验板卡配置格式(省略板名则全部)
 # 仅一块板时可省略 -b
 ```
 
@@ -48,7 +49,7 @@ boardctl -b myboard power off      # 手动关机(on 同理)
 |---|---|---|
 | 顶层 | `ssh_host` | 命令模式命令的执行位置:空 = 本机;填 ssh 别名(如 `myserver`)= 经 ssh 远端执行,别名/端口/用户走 `~/.ssh/config` |
 | `[serial]` | `url` / `timeout` | 串口 URL(TCP 桥 `socket://host:port`、本地 `ttyUSB0`、`rfc2217://...`) |
-| `[console]` | `prompt` | 控制台提示符(命令结束的判定依据)——板上跑什么配什么:U-Boot `=>`、Linux shell `#`…皆可;旧配置写在 `[uboot].prompt` 的自动继承,零改动可用 |
+| `[console]` | `prompt` | 控制台提示符(命令结束的判定依据)——板上跑什么配什么:U-Boot `=>`、Linux shell `#`…皆可 |
 | `[uboot]` | `load_addr` | U-Boot 默认加载地址 |
 | | `server_ip` / `ensure_server_ip` | TFTP 服务器地址;目标 U-Boot 环境易失(无 saveenv)时置 true,连接时自动恢复 |
 | `[power]` | `method = "mijia"` + `[power.mijia]` dev_name/did | 电源插件:原生小米云(凭证复用 `mijiaAPI` CLI 登录态,首次需 `mijiaAPI login` 扫码),不走 ssh_host |
@@ -57,9 +58,8 @@ boardctl -b myboard power off      # 手动关机(on 同理)
 | `[tftp]` | `method=remote` + `ssh_host`/`remote_dir` | scp 到远端 tftpd 服务器 |
 | | `method=external` + `local_dir` | **本机已有常驻 tftpd(如 tftpd-hpa)服务 UDP 69**:只把文件放进其根目录即可——不探测端口、不建服务器、免特权 |
 | `[loady]` | `sender` | Ymodem 发送器(空则自动查找:Arch 为 `lrzsz-sb`,Debian/Ubuntu 为 `sb`) |
-| `[run.<名字>]` | `mode` / `file` / `cmd` / `method` / `timeout` | 启动目标(mode 即模式插件名):`uboot`(缺省:传文件+cmd 执行,`{addr}`/`{entry}` 缺省 `uboot.load_addr`)、`console`(不传输,上电到提示符直接执行 `cmd`,无地址语义)、`watch`(被动观察:零写入,板子自己跑);旧写法 `exec="watch"` 等价 `mode="watch"` |
+| `[run.<名字>]` | `mode` / `file` / `cmd` / `method` / `timeout` | 启动目标(mode 即模式插件名):`uboot`(缺省:传文件+cmd 执行,`{addr}`/`{entry}` 缺省 `uboot.load_addr`)、`console`(不传输,上电到提示符直接执行 `cmd`,无地址语义)、`watch`(被动观察:零写入,板子自己跑) |
 | | `cmd` | U-Boot 执行命令模板:`go {addr}`、`source {addr}`、`booti {addr} - {fdt}`;变量取本目标键(`{addr}`/`{entry}` 缺省 `uboot.load_addr`),缺变量报错指名;不写 = 只加载不执行;命令序列写在 .scr 里 `source` |
-| | `exec = "watch"` | 旧写法,等价 `mode = "watch"`(被动观察);其余 exec 值 0.11.0 起报错并给迁移指引 |
 | | `addr` / `entry` | 加载地址 / 跳转执行地址;缺省都取 `uboot.load_addr`,加载与入口不同时分别指定 |
 | | `fdt` / `initrd` | booti 执行插件附加键:设备树地址(必需)/ initrd 地址(可选) |
 | | `reset_before` | 开头自动开机:关→开→等提示符(不依赖设备初始状态) |

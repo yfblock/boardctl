@@ -1,4 +1,5 @@
 """命令行入口:极简命令面——run(一键全流程)+ ls(列表)+ power(电源控制)
++ check(校验配置)
 
 google-fire 驱动:Boardctl 类即命令面,方法即子命令。全局 -b/--board 经
 构造器参数收下(须置于子命令前,与历代版本一致;-b 是 board 的短别名,
@@ -125,6 +126,28 @@ class Boardctl:
             cfg = load_board(name)
             desc = f' — {cfg["description"]}' if cfg['description'] else ''
             print(f'{cfg["name"]}{desc}')
+
+    def check(self, name=None):
+        """校验板卡配置格式(schema.py 声明的形状;不碰硬件)
+        省略板名则校验全部;有无效配置时退出码 1
+        """
+        boards = available_boards()
+        if name is not None:
+            if name not in boards:
+                sys.exit(f'未知开发板 {name!r},可用: {" ".join(sorted(boards)) or "(无)"}')
+            boards = {name: boards[name]}
+        if not boards:
+            sys.exit('没有找到任何板卡配置(~/.config/boardctl/ 或 $BOARDCTL_BOARDS)')
+        failed = 0
+        for n in sorted(boards):
+            try:
+                load_board(n)
+                print(f'{n}: OK')
+            except SystemExit as e:
+                failed += 1
+                print(f'{n}: 无效\n{e.code}')
+        if failed:
+            sys.exit(1)
 
 
 def main():
