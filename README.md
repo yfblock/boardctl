@@ -71,7 +71,7 @@ boardctl check                     # 校验板卡配置格式(省略板名则全
 
 ```
 boardctl/
-├── cli.py        命令行接线(google-fire 类组件,无业务逻辑)
+├── cli.py        命令行接线(cyclopts 注解式,无业务逻辑)
 ├── config.py     板卡 TOML 加载(不依赖其他模块)
 ├── serial.py     串口域:纯字节通道 + fd 借出(不依赖其他模块)
 ├── stream.py     常驻捕获域:读线程持续捕字节进日志,等待 = 水位 + 谓词 + 条件变量;
@@ -124,7 +124,7 @@ uv run python tests/test_software.py      # 纯软件测试(无需硬件)
 
 ## 依赖
 
-Python 3.11+(stdlib `tomllib`)+ pyserial + fire(CLI 解析,传递依赖 termcolor)。
+Python 3.11+(stdlib `tomllib`)+ pyserial + cyclopts(CLI 解析,传递依赖 rich)+ msgspec(配置建模)。
 裸机测试固件交叉构建另需
 `riscv64-linux-gnu-gcc`、`mkimage`(uboot-tools)、`lrzsz`。
 

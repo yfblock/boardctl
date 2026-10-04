@@ -17,7 +17,7 @@
                serial, stream, console)
   config.py    板卡 TOML 加载(不依赖其他模块)
   runner.py    run 编排域:Runner,一块板 ↔ 多个 runner(依赖 board + plugins)
-  cli.py       命令行入口,只做接线(google-fire)
+  cli.py       命令行入口,只做接线(cyclopts 注解式)
   mcp_server.py MCP server(依赖 runner)
   plugins/     插件,三族:transport(传输)、power(电源)、mode(启动模式,
                [run.*].mode 选择)——插件即类,按目录约定自动发现

@@ -478,8 +478,10 @@ try:
 finally:
     del _POWER_REG['fake']
 
-# 10. CLI 接线(google-fire):Boardctl 类方法即子命令,走 fire.Fire 真实入口,
-#     叶子打桩(do_run/板卡目录/Power 门面),不碰文件系统与硬件
+# 10. CLI 接线(cyclopts):类型即校验(repeat:int、power state:Literal,
+#     解析层拦截非法值),全局 -b 经 meta 入口前置;走 app.meta 真实入口,
+#     叶子打桩(do_run/板卡目录/Power 门面),不碰文件系统与硬件。
+#     业务在 Boardctl 类里,方法可直接调(绕过 CLI 层)
 from boardctl import cli as _cli  # noqa: E402
 
 _runcalls = []
@@ -487,36 +489,40 @@ with _mock.patch.object(_cli, 'do_run',
                         lambda cfg, name, repeat=1: _runcalls.append((cfg['name'], name, repeat))), \
         _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/example.toml'}), \
         _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}):
-    # 全局 -b 前置于子命令(构造器短别名)+ 位置参数 + 短旗标 -r
-    _cli.fire.Fire(_cli.Boardctl, ['-b', 'example', 'run', 'hello', '-r', '3'])
+    # 全局 -b 前置于子命令 + 位置参数 + 短旗标 -r(cyclopts 按 int 注解交付)
+    _cli.app.meta(['-b', 'example', 'run', 'hello', '-r', '3'])
     assert _runcalls == [('example', 'hello', 3)], _runcalls
     # 缺省 -b:仅一块用户板时自动选中
     _runcalls.clear()
-    _cli.fire.Fire(_cli.Boardctl, ['run', 'hello'])
+    _cli.app.meta(['run', 'hello'])
     assert _runcalls == [('example', 'hello', 1)], _runcalls
     # 省略目标名 = 列出目标(do_run 收到 None)
     _runcalls.clear()
-    _cli.fire.Fire(_cli.Boardctl, ['run'])
+    _cli.app.meta(['run'])
     assert _runcalls == [('example', None, 1)], _runcalls
-    # 纯数字板名:fire 字面量化成 int,__init__ 的 str() 兜底还原
+    # 纯数字板名按注解交付 str(fire 时代会被字面量化成 int,需 str() 兜底)
     _runcalls.clear()
-    _cli.fire.Fire(_cli.Boardctl, ['-b', '2026', 'run', 'x'])
+    _cli.app.meta(['-b', '2026', 'run', 'x'])
     assert _runcalls == [('2026', 'x', 1)], _runcalls
 
-# repeat 手工校验(fire 不做类型校验)
+# 非法 repeat:cyclopts 解析层拦截,报错文案带原值(退出码属框架约定,
+# 只断非零不断具体码——0.10.0 教训:别断言 CLI 框架的退出码)
 with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/e.toml'}), \
         _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}):
-    try:
-        _cli.fire.Fire(_cli.Boardctl, ['run', 'hello', '-r', 'abc'])
-        raise AssertionError('非法 repeat 应被拒绝')
-    except SystemExit as e:
-        assert '正整数' in str(e.code), e.code
+    with contextlib.redirect_stdout(_io2.StringIO()) as _so, \
+            contextlib.redirect_stderr(_io2.StringIO()) as _se:
+        try:
+            _cli.app.meta(['run', 'hello', '-r', 'abc'])
+            raise AssertionError('非法 repeat 应被拒绝')
+        except SystemExit as e:
+            assert e.code not in (0, None), e.code
+    assert 'abc' in _so.getvalue() + _se.getvalue(), (_so.getvalue(), _se.getvalue())
 
 # 多块用户板且未 -b:明确报错退出
 with _mock.patch.object(_cli, 'available_boards',
                         lambda: {'a': '/x/a.toml', 'b': '/x/b.toml'}):
     try:
-        _cli.fire.Fire(_cli.Boardctl, ['run'])
+        _cli.app.meta(['run'])
         raise AssertionError('多板未指定 -b 应报错退出')
     except SystemExit as e:
         assert '请用 -b' in str(e.code), e.code
@@ -548,39 +554,38 @@ class _FakeCliPower:
 with _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}), \
         _mock.patch.object(_cli.power, 'Power', _FakeCliPower):
     with contextlib.redirect_stdout(_io2.StringIO()):
-        _cli.Boardctl(board='ex').power('off')                      # 直接调方法
-        _cli.fire.Fire(_cli.Boardctl, ['-b', 'ex', 'power', 'off'])  # 经 fire
+        _cli.Boardctl(board='ex').power('off')                    # 直接调方法
+        _cli.app.meta(['-b', 'ex', 'power', 'off'])               # 经 cyclopts
     assert _pcalls == [('ex', 'off'), ('ex', 'off')], _pcalls
     with contextlib.redirect_stdout(_io2.StringIO()) as _so:
         _cli.Boardctl(board='ex').power('status')   # status 打印开/关(cli 语义)
     assert _so.getvalue() == '关\n', _so.getvalue()
 
-# power 非法 state:手工校验拒绝(fire 无 Literal 校验)
+# 非法 power state:Literal 在解析层拒绝(方法内手工校验仍在,兜程序化调用)
 with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/e.toml'}):
-    try:
-        _cli.fire.Fire(_cli.Boardctl, ['power', 'bogus'])
-        raise AssertionError('非法 power state 应被拒绝')
-    except SystemExit as e:
-        assert '无效 state' in str(e.code), e.code
+    with contextlib.redirect_stdout(_io2.StringIO()) as _so, \
+            contextlib.redirect_stderr(_io2.StringIO()) as _se:
+        try:
+            _cli.app.meta(['power', 'bogus'])
+            raise AssertionError('非法 power state 应被拒绝')
+        except SystemExit as e:
+            assert e.code not in (0, None), e.code
+    assert 'bogus' in _so.getvalue() + _se.getvalue(), (_so.getvalue(), _se.getvalue())
 
 # ls 分发
 with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/example.toml'}), \
         _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'description': '示例'}):
     with contextlib.redirect_stdout(_io2.StringIO()) as _so:
-        _cli.fire.Fire(_cli.Boardctl, ['ls'])
+        _cli.app.meta(['ls'])
 assert 'example' in _so.getvalue(), _so.getvalue()
 
-# 无参数:打印组件帮助,正常返回或退出码 0。fire 生成帮助会求值全部
-# 成员(含 cfg 属性 → 自动选板):须 mock 出恰好一块用户板,否则测试
-# 依赖本机恰好有一块板配置,在无配置的机器(CI runner)上会 sys.exit
-with _mock.patch.object(_cli, 'available_boards', lambda: {'ex': '/x/ex.toml'}), \
-        _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}):
-    with contextlib.redirect_stdout(_io2.StringIO()) as _so:
-        try:
-            _cli.fire.Fire(_cli.Boardctl, [])
-        except SystemExit as e:
-            assert e.code in (0, None), e.code
-assert 'SYNOPSIS' in _so.getvalue(), _so.getvalue()
+# 无参数:打印用法帮助并正常返回(result_action=return_value,不退码)。
+# cyclopts 帮助只看签名不求值成员——fire 时代 inspect.getmembers 会求值
+# cfg 属性触发自动选板,测试被迫 mock"恰好一块板"(CI 曾因此红),
+# 该脆弱性随引擎更换消失,无需任何 mock
+with contextlib.redirect_stdout(_io2.StringIO()) as _so:
+    _cli.app.meta([])
+assert 'Usage' in _so.getvalue(), _so.getvalue()
 
 # 11. 板卡配置目录:board_dir 直接放 *.toml(~/.config/boardctl,无 boards/ 子目录);
 #     $BOARDCTL_BOARDS 指向的目录里直放 toml 即被发现且优先(同名先到先得,

@@ -1,23 +1,38 @@
 """命令行入口:极简命令面——run(一键全流程)+ ls(列表)+ power(电源控制)
 + check(校验配置)
 
-google-fire 驱动:Boardctl 类即命令面,方法即子命令。全局 -b/--board 经
-构造器参数收下(须置于子命令前,与历代版本一致)。单字母短旗标(-b/-r)
-不必另设参数承接:fire 把无同名参数的单字母 key 自动映射到唯一以该字母
-开头的参数,帮助页也随之渲染成 "-b, --board" 合并形态。fire 不做类型/
-取值校验,power state 与 repeat 由本模块手工校验;板名 str() 兜底纯数字
-名被 fire 字面量化成 int。
+cyclopts 注解式解析:类型即校验——repeat 声明 int、power state 用 Literal
+合法值,非法参数在解析层即报错(带用法提示)。全局 -b/--board 须经 meta
+入口收下(置于子命令前,与历代一致);meta 构造 Boardctl 一次,注入声明了
+它的子命令(Annotated[..., Parameter(parse=False)] 约定,经 parse_args 的
+ignored 传递)。板名解析与配置加载仍是 Boardctl.cfg 懒加载——ls/check
+不触。命令体只转发到 Boardctl 方法:业务逻辑与打断善后(@_guarded)都
+在类里,测试可直接调方法。
 """
 import functools
+import importlib.metadata
 import os
 import signal
 import sys
+from typing import Annotated, Literal
 
-import fire
+import cyclopts
+from cyclopts import Parameter
 
 from . import power
 from .config import BUNDLED_BOARDS_DIR, available_boards, load_board
 from .runner import do_run
+
+try:
+    _VERSION = importlib.metadata.version('boardctl')
+except importlib.metadata.PackageNotFoundError:
+    _VERSION = '0.0.0'   # 源码态未安装,占位(装好即真版本)
+
+# result_action='return_value':命令成功时 app.meta() 正常返回而不是
+# sys.exit(0)——保持可嵌入(测试/程序化调用);成败退出码由命令自身
+# sys.exit 与错误路径负责
+app = cyclopts.App(name='boardctl', version=_VERSION,
+                   result_action='return_value')
 
 
 class _Interrupted(BaseException):
@@ -131,6 +146,7 @@ class Boardctl:
 
     def check(self, name=None):
         """校验板卡配置格式(schema.py 声明的形状;不碰硬件)
+
         省略板名则校验全部;有无效配置时退出码 1
         """
         boards = available_boards()
@@ -148,9 +164,58 @@ class Boardctl:
             sys.exit(1)
 
 
+@app.meta.default
+def _launch(
+    *tokens: Annotated[str, Parameter(show=False, allow_leading_hyphen=True)],
+    board: Annotated[str | None,
+                     Parameter(name=['-b', '--board'],
+                               help='开发板名(缺省:仅一块用户板卡时自动选中)')] = None,
+):
+    """开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),
+    板卡与启动目标配置见 ~/.config/boardctl,插件化传输/执行/电源/启动模式"""
+    command, bound, ignored = app.parse_args(tokens)
+    extra = {'ctl': Boardctl(board=board)} if 'ctl' in ignored else {}
+    command(*bound.args, **bound.kwargs, **extra)
+
+
+@app.command
+def run(
+    name: Annotated[str | None, Parameter(help='启动目标名(省略则列出可用目标)')] = None,
+    repeat: Annotated[int, Parameter(name=['-r', '--repeat'],
+                                     help='重复轮数(>1 时每轮冷启动,结束汇总 PASS/FAIL)')] = 1,
+    *,
+    ctl: Annotated[Boardctl, Parameter(parse=False)],
+):
+    """一键全流程启动(目标配置于 [run.<名字>];省略目标名则列出可用目标)"""
+    ctl.run(name, repeat)
+
+
+@app.command(name='power')
+def power_ctl(
+    state: Annotated[Literal['on', 'off', 'status'],
+                     Parameter(help='on 开机 / off 关机 / status 查询状态')],
+    *,
+    ctl: Annotated[Boardctl, Parameter(parse=False)],
+):
+    """电源控制(经电源插件:mijia/command)"""
+    ctl.power(state)
+
+
+@app.command
+def ls(*, ctl: Annotated[Boardctl, Parameter(parse=False)]):
+    """列出开发板"""
+    ctl.ls()
+
+
+@app.command
+def check(
+    name: Annotated[str | None, Parameter(help='板名(省略则校验全部)')] = None,
+    *,
+    ctl: Annotated[Boardctl, Parameter(parse=False)],
+):
+    """校验板卡配置格式(schema.py 声明的形状;不碰硬件);有无效配置时退出码 1"""
+    ctl.check(name)
+
+
 def main():
-    # fire 的帮助在 tty 下经 PAGER 起 less 全屏分页(不设则自动找 less;
-    # PAGER=- 更糟,落回 fire 内置全屏分页器)。固定 cat = 帮助直接顺序
-    # 输出,可回滚可管道;须在 fire.Fire 之前设好
-    os.environ['PAGER'] = 'cat'
-    fire.Fire(Boardctl)
+    app.meta(sys.argv[1:])
