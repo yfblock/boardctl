@@ -6,7 +6,8 @@ cyclopts 注解式解析:类型即校验——repeat 声明 int、power state �
 入口收下(置于子命令前,与历代一致);板卡配置在 meta 层解析一次,注入
 声明了 cfg 的子命令(Annotated[..., Parameter(parse=False)] 约定,经
 parse_args 的 ignored 传递)——ls/check 不声明即不解析。run 的打断善后
-(_run_guarded)在 cfg 已落定后才装信号钩子:板名解析阶段的退出不触发善后。
+直住在 run 体里,且在 cfg 已落定后才装信号钩子:板名解析阶段的退出
+不触发善后。
 """
 import os
 import signal
@@ -48,23 +49,6 @@ def _ensure_power_off(cfg):
         return  # 本来就是关的
     if not p.off(check=False):
         print('[boardctl] 自动关机失败,请手动确认电源状态', file=sys.stderr)
-
-
-def _run_guarded(cfg, name, repeat):
-    """带打断关机保证的 run:Ctrl-C/SIGTERM/异常退出时若板开机则关机。
-    cfg 已由 meta 落定后才进到这里——装钩子之前,板名解析阶段的退出
-    不会误触发善后"""
-    old_term = signal.signal(signal.SIGTERM, _on_signal)
-    try:
-        do_run(cfg, name, repeat)
-    except (KeyboardInterrupt, _Interrupted):
-        _ensure_power_off(cfg)
-        sys.exit(130)
-    except Exception:
-        _ensure_power_off(cfg)
-        raise
-    finally:
-        signal.signal(signal.SIGTERM, old_term)
 
 
 def _board_name(raw):
@@ -109,7 +93,19 @@ def run(
     """一键全流程启动(目标配置于 [run.<名字>];省略目标名则列出可用目标)"""
     if repeat < 1:   # 类型已由 int 注解保证,这里只拦范围
         sys.exit(f'--repeat/-r 须为正整数,收到: {repeat!r}')
-    _run_guarded(cfg, name, repeat)
+    # 打断善后:Ctrl-C/SIGTERM/异常退出时若板开机则关机。cfg 已由 meta
+    # 落定,装钩子之后才进 do_run——板名解析阶段的退出不触发善后
+    old_term = signal.signal(signal.SIGTERM, _on_signal)
+    try:
+        do_run(cfg, name, repeat)
+    except (KeyboardInterrupt, _Interrupted):
+        _ensure_power_off(cfg)
+        sys.exit(130)
+    except Exception:
+        _ensure_power_off(cfg)
+        raise
+    finally:
+        signal.signal(signal.SIGTERM, old_term)
 
 
 @app.command(name='power')
