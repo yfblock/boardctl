@@ -1,12 +1,7 @@
-"""command power plugin: runs the on_cmd / off_cmd / status_cmd commands
-configured in [power]
-
-The "custom power commands" approach: arbitrary shell commands, executed
-locally or remotely per the top-level ssh_host. status_cmd may be omitted;
-when the command output can't be parsed reliably, status returns None (the
-caller prints it as-is). When method isn't configured, this plugin is the
-default.
-"""
+"""command power plugin (the default): runs the on_cmd/off_cmd/status_cmd
+configured in [power], locally or remotely per the top-level ssh_host.
+status_cmd may be omitted; arbitrary command output can't be parsed into a
+bool → status returns None."""
 import sys
 
 from ...shell import run as run_shell
@@ -35,7 +30,7 @@ class CommandPower(PowerDevice):
         status = self.cfg.power.status_cmd
         if status:
             run_shell(self.cfg, status, check=False)
-        return None   # arbitrary command output can't be reliably parsed into a bool
+        return None   # arbitrary output can't be reliably parsed into a bool
 
 
 PLUGIN = CommandPower

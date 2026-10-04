@@ -1,12 +1,6 @@
-"""Command execution: per the board config's ssh_host, run locally or via
-ssh on a remote host
-
-- ssh_host empty: run with local /bin/sh -c, working directory = project
-  root (relative paths like ./run.sh work)
-- ssh_host set: ssh <host> <command>, interpreted by the remote shell;
-  commands must carry their own paths (host alias/port/user go through
-  ~/.ssh/config, e.g. myserver)
-"""
+"""Command domain: run per cfg.ssh_host — empty: local /bin/sh -c, cwd =
+BASE_DIR (relative paths work); set: ssh <host> <command>, interpreted by
+the remote shell (alias/port/user go through ~/.ssh/config)."""
 import subprocess
 
 from .config import BASE_DIR

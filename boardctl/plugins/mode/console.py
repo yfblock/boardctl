@@ -1,11 +1,7 @@
 """console boot mode: no transport, execute cmd directly once powered on to
-the prompt — the typical shape of prompt-driven consoles like a Linux
-shell.
-
-No address semantics: {addr}/{entry} are unavailable (unconfigured means
-an error naming the variable), variables come from the target's own keys.
-If a serial transport plugin aimed at shells ever appears (e.g. base64
-paste), file/method can be opened up then."""
+the prompt (Linux shell shape). No address semantics: {addr}/{entry} are
+unavailable here (unconfigured means an error naming the variable),
+variables come from the target's own keys."""
 import sys
 
 from . import RunMode, expand_cmd, target_vars
@@ -18,7 +14,7 @@ class ConsoleMode(RunMode):
         self.cfg = cfg
 
     def launch(self, runner):
-        board, name, t = runner.board, runner.name, runner.t   # this runner's object data
+        board, name, t = runner.board, runner.name, runner.t
         for k in ('file', 'method', 'addr', 'entry'):
             if getattr(t, k):
                 sys.exit(f'run.{name} (mode=console) rejects {k}: console mode only executes '
@@ -32,7 +28,7 @@ class ConsoleMode(RunMode):
             board.cold_boot()
 
         print(f'[{name}] executing: {cmdline}', flush=True)
-        return board.stream, cmdline, None   # cold_boot already confirmed the prompt; the streaming engine marks its own watermark
+        return board.stream, cmdline, None   # cold_boot already confirmed the prompt
 
 
 PLUGIN = ConsoleMode

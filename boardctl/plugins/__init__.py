@@ -1,21 +1,15 @@
 """Plugin registry: auto-discovery by directory convention, no registration
 code.
 
-- plugins/transport/<mod>.py   transport plugins (Transport subclasses)
-- plugins/power/<mod>.py       power plugins (PowerDevice subclasses)
-- plugins/mode/<mod>.py        boot-mode plugins (RunMode subclasses,
-                               selected via [run.*].mode)
+- plugins/transport/<mod>.py   Transport subclasses (registry TRANSPORT)
+- plugins/power/<mod>.py       PowerDevice subclasses (POWER)
+- plugins/mode/<mod>.py        RunMode subclasses (MODE, selected via [run.*].mode)
 
-Plugins are classes: each plugin module provides PLUGIN = <class>; the class
-declares NAME (the registry name). Config section shapes and defaults live
-uniformly in schema.py (single source); plugins take the sections they need
-via cfg attributes. Creating a plugin = drop a module file into the right
-directory, effective automatically; if it brings a new config section, just
-add the field to schema.BoardCfg (a section not yet settled can first be
-declared as dict). (The executed command itself is a [run.*].cmd config
-template, not a plugin — since 0.11.0; the mode family interprets "how a
-target gets brought up", not "what command to execute".)
-"""
+A plugin module provides PLUGIN = <class>; the class declares NAME (the
+registry name). Config section shapes and defaults live only in schema.py.
+Creating a plugin = dropping a module file into the right directory; if it
+brings a new config section, add the field to schema.BoardCfg. The executed
+command itself is a [run.*].cmd config template, not a plugin."""
 import importlib
 import pkgutil
 

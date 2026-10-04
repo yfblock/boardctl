@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Internal: comment/docstring density pass across boardctl/ and tests/ —
+  narration and code-restating comments removed, multi-sentence explanations
+  compressed to one-liners; contracts and invariants (watermark semantics,
+  tap lifecycle, park/resume, ordering discipline) kept. Code verified
+  AST-identical before/after (sole functional-adjacent delta: dropped a
+  redundant `import termios` in runner's interactive-mode finally)
+
 ## 0.14.0 - 2026-10-04
 
 - **Config modeling with msgspec: validated on load (new dependency msgspec)** —

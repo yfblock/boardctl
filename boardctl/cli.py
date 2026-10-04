@@ -1,17 +1,9 @@
-"""CLI entry: minimal command surface — run (one-shot full flow) + ls (list)
-+ power (power control) + check (validate config)
-
-cyclopts annotation-driven parsing: the type IS the validation — repeat is
-declared int, power state uses a Literal of legal values, illegal arguments
-error at the parse layer (with usage hints). The global -b/--board must be
-received through the meta entry (placed before the subcommand, as in every
-era so far); the board config is resolved once at the meta layer and injected
-into subcommands that declare cfg (the Annotated[..., Parameter(parse=False)]
-convention, delivered via parse_args's ignored) — ls/check don't declare it,
-so it isn't resolved. run's interrupt cleanup lives directly in the run body,
-and the signal hook is installed only after cfg is settled: exits during
-board-name resolution don't trigger cleanup.
-"""
+"""CLI entry: run (one-shot full flow) + ls + power + check, cyclopts
+annotation-driven — the type IS the validation (repeat is int, power state
+is a Literal; illegal arguments error at the parse layer). The global
+-b/--board is received at the meta layer, which resolves the board config
+once and injects it into subcommands declaring cfg (ls/check don't declare
+it, so it isn't resolved)."""
 import os
 import signal
 import sys
@@ -27,11 +19,10 @@ from .config import BUNDLED_BOARDS_DIR, available_boards, load_board
 from .schema import BoardCfg
 from .runner import do_run
 
-# result_action='return_value': on success app.meta() returns normally
-# instead of sys.exit(0) — keeps it embeddable (tests/programmatic calls);
-# exit codes are owned by each command's own sys.exit and error paths
-# help_formatter: same rich two-column layout, but the panel frame is the
-# invisible box.SIMPLE (no ╭─╮ borders; Commands/Parameters stay as headers)
+# result_action='return_value': app.meta() returns instead of sys.exit(0) —
+# keeps it embeddable (tests/programmatic calls); exit codes are owned by
+# each command's own sys.exit and error paths.
+# help_formatter: same rich two-column layout, panel frame = invisible box.SIMPLE
 app = cyclopts.App(name='boardctl', version=__version__,
                    result_action='return_value',
                    help_formatter=DefaultFormatter(
@@ -47,8 +38,7 @@ def _on_signal(signum, _frame):
 
 
 def _board_name(raw):
-    """raw -b value → board name: when omitted and exactly one user board
-    exists (bundled example doesn't count), it is auto-selected"""
+    """Omitted -b: auto-select when exactly one user board exists (bundled example doesn't count)."""
     if raw is None:
         user_boards = {n: p for n, p in available_boards().items()
                        if not p.startswith(BUNDLED_BOARDS_DIR + os.sep)}
@@ -74,7 +64,7 @@ def _launch(
     execute → assert → after-handling); boards and boot targets are configured
     in ~/.config/boardctl, with pluggable transport/power/boot-mode"""
     command, bound, ignored = app.parse_args(tokens)
-    if 'cfg' in ignored:                 # resolve board only for subcommands declaring cfg (ls/check don't)
+    if 'cfg' in ignored:                 # resolve the board only for subcommands declaring cfg
         ignored['cfg'] = load_board(_board_name(board))
     command(*bound.args, **bound.kwargs, **ignored)
 
@@ -93,7 +83,7 @@ def run(
 
     def ensure_off():
         print('\n[boardctl] interrupted, ensuring power-off...', file=sys.stderr, flush=True)
-        p = power.Power(cfg)          # closure takes cfg directly, no parameter needed
+        p = power.Power(cfg)
         try:
             state = p.status()
         except SystemExit:
@@ -103,8 +93,7 @@ def run(
         if not p.off(check=False):
             print('[boardctl] automatic power-off failed, please check the power state manually', file=sys.stderr)
 
-    # install the hook only after cfg is settled: exits during board-name
-    # resolution don't trigger cleanup
+    # hook installed after cfg is settled: exits during board-name resolution don't trigger cleanup
     old_term = signal.signal(signal.SIGTERM, _on_signal)
     try:
         do_run(cfg, name, repeat)
@@ -160,7 +149,7 @@ def check(
     failed = 0
     for n in [name] if name is not None else sorted(boards):
         try:
-            load_board(n)   # unknown-board/invalid-config checks live in load_board; errors carry the board name
+            load_board(n)   # unknown-board/invalid-config checks live in load_board
             print(f'{n}: OK')
         except SystemExit as e:
             failed += 1

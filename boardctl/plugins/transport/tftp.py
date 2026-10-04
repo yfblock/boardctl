@@ -1,10 +1,8 @@
-"""tftp transport plugin: the device pulls via tftpboot. How files get
-staged is declared explicitly via [tftp].method:
-remote   = scp to a remote tftp server;
-external = a resident tftpd (e.g. tftpd-hpa) already serves UDP 69 on this
-           host; just drop the file into its root dir — no port probing, no
-           server setup, no privileges.
-"""
+"""tftp transport: the device pulls via tftpboot. How files get staged is
+declared explicitly via [tftp].method: remote = scp to a remote tftp
+server; external = a resident tftpd (e.g. tftpd-hpa) already serves UDP 69
+on this host — just drop the file into its root dir, no probing, no
+privileges."""
 import os
 import re
 import shutil
@@ -16,9 +14,8 @@ from . import Transport
 
 
 def _port_listeners(port, files=('/proc/net/udp', '/proc/net/udp6')):
-    """Find sockets bound to this local UDP port in /proc/net/udp{,6}
-    (visible without privileges). Non-empty return = some process holds the
-    port (e.g. a resident tftpd-hpa)."""
+    """Sockets bound to this UDP port per /proc/net/udp{,6} (no privileges
+    needed); non-empty = some process holds the port."""
     found = []
     for f in files:
         try:
@@ -38,7 +35,7 @@ def _port_listeners(port, files=('/proc/net/udp', '/proc/net/udp6')):
 
 
 def _drop_into(local_dir, path, fname):
-    """Drop the file into the tftp root dir; skip if already in place (avoids self-copy)"""
+    """Copy the file into the tftp root; skip when already in place (no self-copy)."""
     dst = os.path.join(local_dir, fname)
     if os.path.realpath(path) == os.path.realpath(dst):
         return
@@ -53,7 +50,7 @@ class TftpTransport(Transport):
         self.cfg = cfg
 
     def _stage_file(self, path):
-        """Put the file where the TFTP server can read it"""
+        """Put the file where the TFTP server can read it."""
         t = self.cfg.tftp
         method = t.method
         fname = os.path.basename(path)
@@ -69,10 +66,8 @@ class TftpTransport(Transport):
                          f'One-time fix: ssh -t {ssh} "sudo chown $USER {rdir}"\n'
                          'or switch this target to method = "loady" (no privileges needed, slower)')
         elif method == 'external':
-            # a resident tftpd already serves UDP 69 on this host: boardctl
-            # only stages the file; whether the server runs is the declarer's
-            # business — probing the port would guess intent, so don't (just a
-            # one-line heads-up if it looks down)
+            # whether the resident tftpd runs is the declarer's business —
+            # probing would guess intent, so don't (just a heads-up if it looks down)
             local_dir = os.path.abspath(t.local_dir)
             _drop_into(local_dir, path, fname)
             if os.path.exists('/proc/net/udp') and not _port_listeners(69):
@@ -86,9 +81,7 @@ class TftpTransport(Transport):
             sys.exit(f'unknown tftp.method: {method} (available: remote / external)')
 
     def send(self, channel, path, addr):
-        """channel: the board's resident capture stream (lent by the
-        orchestrator; the plugin opens no connection of its own and doesn't
-        close it when done)"""
+        """channel: the board's resident capture stream, lent by the orchestrator."""
         self._stage_file(path)
         fname = os.path.basename(path)
         server_ip = self.cfg.uboot.server_ip

@@ -1,11 +1,6 @@
 """boardctl MCP server: exposes ls / run / power status as MCP tools for
-clients like Claude.
-
-After installing (pip install 'boardctl[mcp]'), register:
-  claude mcp add boardctl -- boardctl-mcp
-The tools really control the hardware power (auto power on/off), as noted in
-their docstrings.
-"""
+clients like Claude. After installing (pip install 'boardctl[mcp]'),
+register: claude mcp add boardctl -- boardctl-mcp."""
 import functools
 
 from . import power, runner
@@ -21,13 +16,12 @@ except ImportError as e:  # pragma: no cover
 
 mcp = FastMCP('boardctl')
 
-MAX_SHOW_ROUNDS = 3   # max rounds shown in run_target results (full output_tail is in the return)
+MAX_SHOW_ROUNDS = 3   # max rounds shown in run_target results
 
 
 def _tool_guard(fn):
-    """The underlying APIs lean heavily on sys.exit for errors; SystemExit is
-    a BaseException and would drag the whole MCP 2.x tool coroutine down if it
-    escaped — uniformly converted to error text here."""
+    """The underlying APIs lean on sys.exit; SystemExit would drag the tool
+    coroutine down — uniformly converted to error text."""
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         try:
@@ -40,8 +34,8 @@ def _tool_guard(fn):
 
 def _format_round(r):
     head = (f"round {r['round']}: {'PASS' if r['pass'] else 'FAIL'}"
-         + (f", end={r.get('ended', '?')}" if r.get('ended') else '')
-         + (f"({r['error']})" if r.get('error') else ''))
+            + (f", end={r.get('ended', '?')}" if r.get('ended') else '')
+            + (f"({r['error']})" if r.get('error') else ''))
     return head + '\n' + r.get('output_tail', '')
 
 

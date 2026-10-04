@@ -1,25 +1,18 @@
-"""Power plugin interface conventions (plugins are classes):
+"""Power plugin interface: a module provides PLUGIN = a PowerDevice
+subclass (the class declares NAME, matched by [power].method).
 
-Each plugin module must provide:
-  PLUGIN: a PowerDevice subclass    # the plugin class (subclasses declare NAME themselves)
+  __init__(self, cfg)     # board config; take the sections you need
+  on() / off()            # failures raise; the Power facade wraps the error
+  status() -> bool | None # None when unparseable
 
-PowerDevice subclass conventions:
-  __init__(self, cfg)              # board config; each plugin takes the sections it needs
-  on(self) / off(self)             # power the device on/off; failures raise (the caller wraps the error)
-  status(self) -> bool | None      # query the state; None when unparseable
-
-Config section shapes and defaults live in schema.py (the [power] section);
-plugins take what they need via cfg attributes. Plugins execute natively
-inside the boardctl process (not via ssh_host). Dropping a new .py file in
-this directory auto-registers it.
-"""
+Config shapes and defaults live in schema.py. Plugins execute natively
+inside the boardctl process (not via ssh_host). Plugins must not import
+each other."""
 from abc import ABC, abstractmethod
 
 
 class PowerDevice(ABC):
-    """Power-device abstraction: subclasses implement on/off/status, selected
-    via [power].method — encapsulation = each plugin's details hide inside
-    its class; polymorphism = different subclasses, one interface"""
+    """Power-device abstraction: on/off/status for one board's power source."""
 
     NAME = None            # registry name (subclasses must set), matches [power].method
 

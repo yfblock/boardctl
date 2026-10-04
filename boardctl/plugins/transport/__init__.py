@@ -1,32 +1,21 @@
-"""Transport plugin interface conventions (plugins are classes):
+"""Transport plugin interface: a module provides PLUGIN = a Transport
+subclass (the class declares NAME, matched by [run.*].method).
 
-Each plugin module must provide:
-  PLUGIN: a Transport subclass    # the plugin class (subclasses declare NAME themselves)
-
-Transport subclass conventions:
-  __init__(self, cfg)              # board config; each plugin takes the sections it needs
+  __init__(self, cfg)                # board config; take the sections you need
   send(self, channel, path, addr) -> bool
-                                   # transfer the file to the device's addr; channel is
-                                   # the board's serial channel, lent by the orchestrator —
-                                   # the plugin opens no connection of its own and
-                                   # doesn't close it either (the board owns the lifecycle)
 
-The config section shapes and defaults live in schema.py (e.g. the [tftp]/[loady]
-sections); plugins take what they need via cfg attributes. Available domain
-dependencies: serial (byte channel) / console (console session) / shell (command
-domain). Plugins must not import each other. Dropping a new .py file in this
-directory auto-registers it.
-"""
+channel is the board's resident capture stream, lent by the orchestrator —
+open no connection of your own, don't close it; park()/resume() around any
+fd lend. Config shapes and defaults live in schema.py. Plugins must not
+import each other."""
 from abc import ABC, abstractmethod
 
 
 class Transport(ABC):
-    """Transport abstraction: subclasses implement send, selected via
-    [run.*].method / method — encapsulation = each transport's details hide
-    inside its class; polymorphism = different subclasses, one interface"""
+    """Transport abstraction: how a file reaches the device's addr."""
 
     NAME = None            # registry name (subclasses must set), matches [run.*].method
 
     @abstractmethod
     def send(self, channel, path, addr):
-        """Transfer the file to the device's addr; return True on success (channel is lent by the orchestrator, don't close it)"""
+        """Transfer the file to the device's addr; return True on success."""

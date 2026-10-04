@@ -1,11 +1,6 @@
-"""Board configs: directory discovery + loading.
-
-- Discovery: boards_dirs()/available_boards() find boards by priority
-  $BOARDCTL_BOARDS → ~/.config/boardctl → the bundled example.
-- Loading (load_board): toml parse → inject the board name → msgspec
-  modeling validation (shape and defaults in schema.py) → returned directly
-  as a BoardCfg model object.
-"""
+"""Board config discovery + loading: $BOARDCTL_BOARDS → ~/.config/boardctl →
+the bundled example (template fallback only). load_board: toml parse →
+inject name → msgspec validation (shape and defaults in schema.py) → BoardCfg."""
 import os
 import sys
 import tomllib
@@ -15,19 +10,15 @@ import msgspec
 
 from . import schema
 
-# project root (one level above this package): boards/, run.sh etc. live here in dev runs
+# project root: run-target file paths and local command cwd resolve against it
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# example boards dir shipped with the package (template fallback only, lowest priority)
+# example template shipped with the package, lowest priority
 BUNDLED_BOARDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'boards')
 
 
 def boards_dirs():
-    """Board config directory search order (deduplicated, existing only):
-    $BOARDCTL_BOARDS → ~/.config/boardctl (user configs, the only
-    recommended location) → the bundled example. Local/project folders
-    don't take part in resolution.
-    """
+    """Board config directory search order (deduplicated, existing only)."""
     candidates = [
         os.environ.get('BOARDCTL_BOARDS'),
         str(Path.home() / '.config' / 'boardctl'),
@@ -44,7 +35,7 @@ def boards_dirs():
 
 
 def available_boards():
-    """All available board names (deduplicated by directory priority, first occurrence wins)"""
+    """{name: path} over all dirs; on name collisions the first dir wins."""
     names = {}
     for d in boards_dirs():
         for p in sorted(Path(d).glob('*.toml')):

@@ -1,10 +1,7 @@
-"""uboot boot mode (the default of [run.*].mode): cold boot -> transport
-plugin stages the file -> cmd executes.
-
-The concentration point of U-Boot-specific knowledge: the load-address
-default chain (addr <- uboot.load_addr, entry <- addr), the {addr}/{entry}
-template variables, waiting for the prompt after transport before
-executing."""
+"""uboot boot mode (the default): cold boot → transport stages the file →
+cmd executes. The concentration point of U-Boot knowledge: the {addr}/{entry}
+default chain (addr ← uboot.load_addr, entry ← addr), waiting for the
+prompt after transport before executing."""
 import os
 import sys
 
@@ -13,8 +10,7 @@ from . import RunMode, expand_cmd, target_vars
 
 
 def _expand(cfg, name, t):
-    """uboot command expansion: the {addr}/{entry} default chain — addr <-
-    uboot.load_addr, entry <- addr (target keys take precedence)"""
+    """Inject the {addr}/{entry} defaults into the target's variables (target keys take precedence)."""
     vals = target_vars(t)
     vals.setdefault('addr', cfg.uboot.load_addr)
     vals.setdefault('entry', vals['addr'])
@@ -28,7 +24,7 @@ class UbootMode(RunMode):
         self.cfg = cfg
 
     def launch(self, runner):
-        board, name, t = runner.board, runner.name, runner.t   # this runner's object data
+        board, name, t = runner.board, runner.name, runner.t
         cmdline = _expand(self.cfg, name, t) if t.cmd else None
 
         if t.reset_before:
@@ -43,9 +39,9 @@ class UbootMode(RunMode):
             path = os.path.join(BASE_DIR, path)
         if not os.path.isfile(path):
             sys.exit(f'file not found: {path} (built it first?)')
-        addr = t.addr or self.cfg.uboot.load_addr   # load address (entry {entry} comes from the cmd template)
+        addr = t.addr or self.cfg.uboot.load_addr   # load address ({entry} comes from the cmd template)
         method = t.method or 'tftp'
-        from .. import TRANSPORT   # function-local import: the registry is filled by the plugins package __init__
+        from .. import TRANSPORT   # function-local: the registry is filled by the plugins package __init__
         transport = TRANSPORT.get(method)
         if transport is None:
             sys.exit(f'unknown transport method {method!r}, available: {" ".join(sorted(TRANSPORT)) or "(none)"}')
@@ -59,7 +55,7 @@ class UbootMode(RunMode):
             return None, None, 'loaded'
 
         print(f'[{name}] executing: {cmdline}', flush=True)
-        s = board.session()   # the same capture stream: transport and execution share it
+        s = board.session()   # transport and execution share the capture stream
         ok, _ = s.wait_prompt()
         if not ok:
             sys.exit('timed out waiting for the U-Boot prompt')

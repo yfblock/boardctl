@@ -1,11 +1,7 @@
-"""mijia power plugin: calls the mijiaapi package natively, controlling a
-smart socket via the Xiaomi cloud.
-
-Credentials reuse mijiaAPI CLI's login state (~/.config/mijia-api/auth.json);
-run `mijiaAPI login` (QR scan) once before first use. The on/off property
-name defaults to 'on' (most sockets); on devices whose power prop isn't
-'on', specify it via prop = "..." in [power.mijia].
-"""
+"""mijia power plugin: controls a smart socket via the Xiaomi cloud, calling
+the mijiaapi package natively. Credentials reuse the mijiaAPI CLI login
+state (~/.config/mijia-api/auth.json) — `mijiaAPI login` (QR scan) once
+before first use."""
 import threading
 
 from . import PowerDevice
@@ -15,9 +11,7 @@ class MijiaPower(PowerDevice):
     NAME = 'mijia'
 
     _lock = threading.Lock()
-    _dev_cache = {}   # (did, dev_name) -> mijiaDevice; class attribute: a
-                      # process-level cache shared across instances (avoids
-                      # re-fetching the device list on every call)
+    _dev_cache = {}   # (did, dev_name) -> mijiaDevice; process-level cache shared across instances
 
     def __init__(self, cfg):
         self.cfg = cfg
@@ -40,8 +34,7 @@ class MijiaPower(PowerDevice):
             return self._dev_cache[key]
 
     def _prop(self):
-        """On/off property name: defaults to 'on'; devices not using 'on'
-        configure prop in [power.mijia]"""
+        """On/off property name: default 'on'; some devices differ."""
         return self.cfg.power.mijia.prop
 
     def on(self):

@@ -1,10 +1,5 @@
-"""Serial domain: pure byte channel. Knows only URLs and bytes — no prompts,
-no power, no boards.
-
-Low-level serial details once scattered across the console-session class
-(open/read/write) and the loady plugin (fd lending + O_NONBLOCK cleanup)
-are all collected here.
-"""
+"""Serial domain: pure byte channel — knows only URLs and bytes, no prompts,
+no power, no boards."""
 import fcntl
 import os
 
@@ -12,8 +7,7 @@ import serial
 
 
 class SerialChannel:
-    """Serial byte channel: read/write/drain, can lend the underlying fd to
-    a subprocess (Ymodem)"""
+    """Serial byte channel: read/write/drain + fd lending to a subprocess (Ymodem)."""
 
     def __init__(self, url, timeout):
         self.ser = serial.serial_for_url(url, timeout=timeout)
@@ -29,12 +23,12 @@ class SerialChannel:
         self.ser.write(data.encode() if isinstance(data, str) else data)
 
     def drain(self):
-        """Empty the receive buffer (e.g. line noise during power-off)"""
+        """Empty the receive buffer (power-off line noise)."""
         self.ser.reset_input_buffer()
 
     @property
     def fd(self):
-        """Underlying fd (socket:// serials use their socket's fd); None when no fd is obtainable"""
+        """Underlying fd (socket:// → its socket's fd); None if unavailable."""
         raw = getattr(self.ser, 'sock', None)
         if raw is not None:
             return raw.fileno()
@@ -44,9 +38,7 @@ class SerialChannel:
             return None
 
     def blocking_fd(self):
-        """Return the fd after clearing the O_NONBLOCK set by timeout —
-        otherwise a subprocess read treats EAGAIN as a timeout; returns None
-        when no fd is obtainable"""
+        """fd with O_NONBLOCK cleared (a subprocess read treats EAGAIN as timeout); None if unavailable."""
         fd = self.fd
         if fd is None:
             return None

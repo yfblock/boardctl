@@ -9,17 +9,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 from boardctl.config import BASE_DIR, available_boards, load_board
 from boardctl.plugins import MODE, POWER, TRANSPORT
 
-# 1. plugin registries complete (since 0.11.0 the executor plugin family is
-#    retired: commands returned to cmd template config; since 0.13 "how a
-#    target gets brought up" belongs to the mode plugin family, [run.*].mode)
+# 1. plugin registries complete (bring-up belongs to the mode family, [run.*].mode)
 assert {'loady', 'tftp'} <= set(TRANSPORT), TRANSPORT
 assert {'mijia', 'command'} <= set(POWER), POWER
 assert {'uboot', 'console', 'watch'} <= set(MODE), MODE
 
-# 2. cmd template expansion (the command is config data; the expander lives
-#    in the mode family; the {addr}/{entry} default chain is injected by the
-#    uboot mode: addr <- uboot.load_addr, entry <- addr; console mode has no
-#    defaults, variables come from the target's own keys; unknown vars error by name)
+# 2. cmd template expansion: {addr}/{entry} default chain injected by uboot mode; console mode has no defaults; unknown vars error by name
 from boardctl.plugins.mode import expand_cmd  # noqa: E402
 from boardctl.plugins.mode.uboot import _expand  # noqa: E402
 from boardctl.schema import (BoardCfg, ConsoleCfg, MijiaCfg,  # noqa: E402
@@ -63,8 +58,7 @@ assert not ok and 'fail_re' in detail
 ok, detail, checked = evaluate('anything', RunTarget())
 assert ok and not checked
 
-# 4. board config loading + schema defaults (verified with the bundled generic
-#    example, no personal environment needed; config circulates as a BoardCfg model)
+# 4. board config loading + schema defaults (bundled example; config circulates as a BoardCfg model)
 boards = available_boards()
 assert 'example' in boards, boards
 cfg = load_board('example')
@@ -73,9 +67,7 @@ assert cfg.tftp.method == 'remote', cfg.tftp
 assert cfg.power.method == 'command', cfg.power
 assert cfg.run['hello'].reset_before is True           # the example is fully automatic power on/off
 
-# 5. files referenced by run targets actually exist (except the example
-#    template's placeholder paths; passive targets like watch have no file —
-#    the board fetches by itself)
+# 5. files referenced by run targets exist (except the example's placeholder paths)
 for name, t in cfg.run.items():
     if not t.file:
         continue
@@ -85,9 +77,7 @@ for name, t in cfg.run.items():
     assert os.path.isfile(path) or cfg.name == 'example', \
         f'run.{name} file missing: {path}'
 
-# 6. streaming engine (resident capture: ConsoleStream reader thread +
-#    watermark waiting; fake serial injected — threads/condition variables/
-#    watermarks are all real, only the byte source is swapped)
+# 6. streaming engine: real ConsoleStream threads/watermarks, fake serial as the byte source
 import contextlib  # noqa: E402
 import threading as _threading  # noqa: E402
 import time as _time  # noqa: E402
@@ -99,13 +89,10 @@ from boardctl.stream import ConsoleStream as _Stream  # noqa: E402
 
 
 class _FakeSer:
-    """Fake serial: reads stay empty before power_on (simulating the silence
-    of power-off); after power-on it emits chunks in order, read_delay
-    seconds between blocks; writes are recorded.
-
-    The watermark is taken only at the engine entry — a meaningful first
-    block must come after it; read_delay 0.03 exists for exactly that
-    margin"""
+    """Fake serial: empty reads before power_on (power-off silence); after
+    power-on emits pending chunks in order, read_delay apart; writes
+    recorded. read_delay 0.03: the engine's entry watermark must land before
+    the first block arrives."""
 
     def __init__(self, chunks=(), powered=False, read_delay=0.03):
         self.pending = list(chunks)
@@ -152,9 +139,7 @@ assert ended == 'timeout', ended
 out, ended = _stream(_FakeSer([b'kernel booting...'], powered=True), RunTarget(), timeout=0.3)
 assert ended == 'timeout' and 'kernel booting' in out, (ended, out)
 
-# fail_re hits immediately while streaming (negative verdict beats positive);
-# after a hit, keep capturing fail_linger seconds before wrapping up so error
-# messages/stack output complete (default 2s, 0 = immediate)
+# fail_re: instant negative verdict (beats positives); fail_linger keeps capturing so error output completes (0 = immediate)
 out, ended = _stream(_FakeSer([b'boot ok\n', b'thread panicked at root.rs:401\n', b'never reached'],
                               powered=True),
                      RunTarget(expect=['TEST_RUNNER_DONE'], fail_re=['(?i)panic'], fail_linger=0.3))
@@ -169,9 +154,7 @@ out, ended = _stream(_FakeSer([b'DONE\npanic!\n'], powered=True),
                      RunTarget(expect=['DONE'], fail_re=['panic'], fail_linger=0))
 assert ended == 'fail', ended
 
-# passive watch (cmdline=None): zero writes (not even the command newline);
-# output still captured, end conditions (assertion hit/prompt/timeout/fail_re)
-# exactly as in active mode
+# passive watch (cmdline=None): zero writes; end conditions exactly as in active mode
 ser = _FakeSer([b'U-Boot 2021.10\r\n', b'autoboot...\r\n', b'soph# '], powered=True)
 out, ended = _stream(ser, RunTarget(), cmd=None)
 assert ended == 'prompt' and ser.written == b'' and 'U-Boot 2021.10' in out, (ended, out, ser.written)
@@ -184,9 +167,7 @@ ser = _FakeSer([], powered=True)
 out, ended = _stream(ser, RunTarget(), cmd=None, timeout=0.2)
 assert ended == 'timeout' and ser.written == b'', (ended, ser.written)
 
-# passive target full chain (Runner.run): mode=watch takes the quiet-boot
-# branch (never touches Board.cold_boot — that one sends Ctrl-C), zero
-# writes throughout, assertions as usual
+# passive full chain (Runner.run): watch takes quiet_boot (cold_boot sends Ctrl-C), zero writes throughout
 import unittest.mock as _mock  # noqa: E402
 
 _wser = _FakeSer([b'U-Boot 2021.10\r\n', b'TEST_RUNNER_DONE\r\n', b'soph# '])
@@ -194,14 +175,10 @@ _pcalls = []
 
 
 class _FakeBoard:
-    """Board stub: serial is the fake serial (injectable), the capture
-    stream is real; records which path a cold boot took (with after=none
-    power isn't touched).
-
-    The cold-boot/quiet-boot/power-off stubs also simulate power-on and
-    mirror the real Board's display surface (tap attaches before power-on,
-    detaches before power-off, set_display swaps in a programmatic sink)
-    — the fake serial only emits bytes after power_on"""
+    """Board stub: injectable fake serial, real capture stream; records
+    which boot path was taken. The stubs mirror the real Board's display
+    surface (tap before power-on, detach before power-off, set_display
+    sink swap); the fake serial emits only after power_on."""
 
     def __init__(self, cfg, ser=None):
         self.cfg = cfg
@@ -292,11 +269,8 @@ finally:
     _ob.stream.stop()
 assert ended == 'prompt' and _pcalls == ['quiet', 'off'], (ended, _pcalls)
 
-# display end-to-end: hooked on capture events — device output from quiet
-# power-on flows into the programmatic sink the whole way (set_display swaps
-# in a buffer; after=off flushes the backlog before detaching the tap, so SPL
-# and the assertion line are both there, no reliance on timing luck between
-# the display callback and predicate hits)
+# display end-to-end: device output flows into the programmatic sink the
+# whole way (after=off flushes the backlog before detaching — no timing luck)
 _pcalls.clear()
 _dser = _FakeSer([b'SPL banner\r\n', b'TEST_RUNNER_DONE\r\n'])
 _db = _FakeBoard(_mincfg, _dser)
@@ -370,10 +344,8 @@ try:
     assert _pst.mark() == 0 and _pst.text(0) == ''
     assert _pst.wait(lambda txt: 'never' in txt, 0, 0.05)[1] is False   # the timeout signal isn't lost
 
-    # tap (display callback): shown as captured (async in the reader thread);
-    # backlog flushed before detaching (no display gap, no timing luck); on
-    # re-attach no replay of bytes captured while detached; a raising callback
-    # doesn't poison the capture thread
+    # tap: shown as captured; detach flushes backlog; re-attach doesn't replay;
+    # a raising callback doesn't poison the capture thread
     _taplog = []
     _pst.set_tap(_taplog.append)
     _pser.live = [b'tap1\r\n']
@@ -413,9 +385,7 @@ finally:
 # 7. power semantic layer imports cleanly
 from boardctl import power  # noqa: E402,F401
 
-# 8. tftp file staging: external only stages the file, no probing no server
-#    (no self-copy when already in the root, SameFileError regression); local
-#    is removed — leftover configs get migration guidance
+# 8. tftp staging: external only stages the file (no self-copy regression); local removed with migration guidance
 import tempfile  # noqa: E402
 from pathlib import Path  # noqa: E402
 
@@ -452,13 +422,8 @@ with tempfile.TemporaryDirectory() as td:
     except SystemExit as e:
         assert 'external' in str(e) and 'loady' in str(e), e
 
-# 9. power: plugins are classes (PowerDevice subclasses, polymorphic same
-#    interface), the domain facade Power is a class too (wraps the plugin
-#    instance with unified error handling; the cadence value reset_delay lives
-#    in the domain, cadence orchestration in the board domain — the display
-#    tap must attach before power-on); mijia's on/off property name is
-#    configurable (default on), the device cache/lock are plugin class
-#    attributes (encapsulated, shared across instances)
+# 9. power facade: wraps the plugin, normalizes status to bool/None;
+#    mijia prop default 'on', device cache/lock are class attributes
 from boardctl import power as _power_mod  # noqa: E402
 from boardctl.plugins import POWER as _POWER_REG  # noqa: E402
 from boardctl.plugins.power import mijia as _mijia  # noqa: E402
@@ -502,12 +467,8 @@ try:
 finally:
     del _POWER_REG['fake']
 
-# 10. CLI wiring (cyclopts): types are validation (repeat:int, power
-#     state:Literal, illegal values caught at the parse layer), global -b
-#     fronted via the meta entry; goes through the real app.meta entry with
-#     leaf stubs (do_run/board dirs/Power facade), no filesystem or hardware.
-#     Command functions are the business logic and can also be called
-#     directly, bypassing the CLI layer (cfg as a plain parameter)
+# 10. CLI wiring through the real app.meta entry with leaf stubs (do_run/board
+#     dirs/Power facade); types are validation; commands callable directly too
 from boardctl import cli as _cli  # noqa: E402
 
 _runcalls = []
@@ -531,9 +492,7 @@ with _mock.patch.object(_cli, 'do_run',
     _cli.app.meta(['-b', '2026', 'run', 'x'])
     assert _runcalls == [('2026', 'x', 1)], _runcalls
 
-# illegal repeat: caught at the cyclopts parse layer, error text carries the
-# original value (the exit code is a framework convention — assert nonzero,
-# not a specific code; 0.10.0 lesson: don't assert a CLI framework's exit code)
+# illegal repeat: caught at the parse layer; assert nonzero, not a specific code (framework-owned)
 with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/e.toml'}), \
         _mock.patch.object(_cli, 'load_board', lambda n: BoardCfg(name=n)):
     with contextlib.redirect_stdout(_io2.StringIO()) as _so, \
@@ -554,9 +513,7 @@ with _mock.patch.object(_cli, 'available_boards',
     except SystemExit as e:
         assert 'Specify a board with -b' in str(e.code), e.code
 
-# power dispatch: state and board config reach the Power facade's
-#    on/off/status (subcommand orchestration lives in cli: status prints
-#    on/off, the notice line before on/off prints as usual)
+# power dispatch reaches the facade's on/off/status; status prints on/off
 _pcalls = []
 
 
@@ -607,20 +564,13 @@ with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/exampl
         _cli.app.meta(['ls'])
 assert 'example' in _so.getvalue(), _so.getvalue()
 
-# no arguments: prints usage help and returns normally (result_action=
-# return_value, no exit code). cyclopts help reads signatures only, no member
-# evaluation — in the fire era inspect.getmembers would evaluate the cfg
-# property, triggering board auto-selection, forcing tests to mock "exactly
-# one board" (CI once went red over this); that fragility died with the
-# engine swap, no mocks needed
+# no arguments: prints usage and returns normally; cyclopts reads signatures
+# only (no board auto-selection), no mocks needed
 with contextlib.redirect_stdout(_io2.StringIO()) as _so:
     _cli.app.meta([])
 assert 'Usage' in _so.getvalue(), _so.getvalue()
 
-# 11. board config dirs: *.toml directly in the dir (~/.config/boardctl, no
-#     boards/ subdir); tomls dropped into a $BOARDCTL_BOARDS dir are found and
-#     take priority (same name = first come first served, later dirs not
-#     replaced), loading goes through schema validation and defaults as usual
+# 11. config dirs: *.toml directly in the dir; $BOARDCTL_BOARDS takes priority, first dir wins on name collisions
 with tempfile.TemporaryDirectory() as _td:
     (Path(_td) / 'x.toml').write_text('description = "t"\n[serial]\nurl = "socket://h:1"\n',
                                       encoding='utf-8')
@@ -650,11 +600,8 @@ with tempfile.TemporaryDirectory() as _td:
     finally:
         os.environ.pop('BOARDCTL_BOARDS', None)
 
-# 12. config modeling (msgspec): validated at load — misspelled keys/legacy
-#     keys/illegal enums/types/constraints error on the spot with field paths;
-#     absent means absent (field value None, consumers None-check and take
-#     their own defaults); plugin sections are modeled and validated too; the
-#     check subcommand summarizes per board with a usable exit code
+# 12. config modeling: misspelled/legacy keys, illegal enums/types/constraints
+#     error on load; check summarizes per board with a usable exit code
 with tempfile.TemporaryDirectory() as _td:
     os.environ['BOARDCTL_BOARDS'] = _td
     try:
@@ -689,9 +636,7 @@ with tempfile.TemporaryDirectory() as _td:
             except SystemExit as _e:
                 assert 'invalid config' in str(_e), _e
 
-        # check subcommand: good configs print per-board OK, exit 0; bad ones
-        # print per-board details, exit 1 (mocked board list stays closed: no
-        # dependence on whatever happens to be in ~/.config on this machine)
+        # check: per-board OK / details + exit 1 (mocked board list, no ~/.config dependence)
         _toml('[run.h]\nexpect = ["X"]\n')
         with _mock.patch.object(_cli, 'available_boards',
                                 lambda: {'m': str(Path(_td) / 'm.toml')}):

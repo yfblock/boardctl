@@ -1,19 +1,11 @@
-"""run orchestration domain: Runner drives the single-round full flow
-(power-on -> transport -> execute -> assert -> after-handling). One Board
-maps to many runners, one per [run.<name>] target; repeat > 1 re-runs
-rounds and summarizes.
-
-Display hangs on capture events (the stream tap, attached before power-on
-and detached before power-off by the board domain): the CLI shows
-everything as captured from power-on; run_collect swaps the display sink
-for a per-round buffer (device bytes never reach the caller's stdout) and
-returns a structured result.
-
-How a target gets brought up is the boot-mode family's interpretation
-(plugins/mode, selected via [run.*].mode). The streaming engine
-(_stream_run: watermarks + event wakeup, see stream.py) and the assertion
-engine (evaluate) are shared code — consistent verdict and after-handling
-come from that sharing, not from each plugin's diligence."""
+"""Run orchestration: Runner drives the single-round full flow (power-on →
+transport → execute → assert → after-handling); one Board maps to many
+runners, one per [run.<name>] target; repeat > 1 re-runs rounds and
+summarizes. How a target gets brought up belongs to the mode plugins
+(plugins/mode, selected via [run.*].mode); the streaming engine
+(_stream_run) and the assertion engine (evaluate) are shared — consistent
+verdict and after-handling come from that sharing, not from each plugin's
+diligence."""
 import contextlib
 import io
 import os
@@ -31,9 +23,8 @@ QUIT_BYTE = 0x1C   # quit key in interactive mode
 
 
 def _positives_satisfied(t, buf):
-    """Whether all positive assertions (expect substrings + expect_re regexes)
-    have hit; returns False when no positive assertions are configured
-    (doesn't end as matched — waits for prompt/timeout)"""
+    """All positive assertions hit; False when none configured (keep waiting
+    for prompt/timeout instead of ending as matched)."""
     subs = t.expect
     pats = t.expect_re
     if not subs and not pats:
@@ -48,10 +39,8 @@ def _positives_satisfied(t, buf):
 
 
 def _fail_hit(t, buf):
-    """Whether a negative assertion fail_re hit (streaming instant negative
-    verdict: wrap up as soon as one hits, don't wait out the timeout —
-    panic-class faults cut power immediately to limit damage); details come
-    uniformly from evaluate"""
+    """Any fail_re hit — instant negative verdict: panic-class faults cut
+    power early to limit damage."""
     for p in t.fail_re:
         if re.search(p, buf):
             return True
@@ -59,24 +48,22 @@ def _fail_hit(t, buf):
 
 
 def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
-    """Stream-execute one command, returning (accumulated output, end reason).
+    """Stream-execute one command; returns (accumulated output, end reason).
 
-    End reason, first one wins: prompt (prompt reappears) / fail (fail_re hit
-    but no immediate wrap-up — keep capturing fail_linger seconds so error
-    output completes; when positives and negatives hit in the same batch the
-    negative wins) / matched (all positive assertions hit) / timeout;
-    interactive mode also has user (Ctrl-\\): stdin is forwarded to the device
-    verbatim, no time limit. cmdline=None is passive capture with zero writes
-    (mode=watch — writing would interrupt the board's automatic flow).
-    Display doesn't live here — the stream tap shows as captured; the
-    observation window = the entry watermark, assertions don't look back."""
+    End reason, first one wins: prompt / fail (fail_re hit; with
+    fail_linger>0 keep capturing that long so error output completes — on
+    same-batch ties with positives the negative wins) / matched (all
+    positives hit) / timeout; interactive adds user (Ctrl-\\, no time
+    limit, stdin forwarded raw). cmdline=None is passive capture with zero
+    writes (mode=watch). The observation window starts at the entry
+    watermark — assertions don't look back."""
     since = ch.mark()
     if cmdline is not None:
         ch.write(cmdline + '\r')
 
     deadline = None if (interactive and sys.stdin.isatty()) else time.monotonic() + timeout
     fail_deadline = None
-    linger = max(0.0, float(2 if t.fail_linger is None else t.fail_linger))   # seconds of extra capture after a fail hit
+    linger = max(0.0, float(2 if t.fail_linger is None else t.fail_linger))   # extra capture after a fail hit
     raw = False
 
     def _ended(text):
@@ -94,7 +81,7 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
               end='', flush=True)
     try:
         while True:
-            if fail_deadline is not None:   # fail-linger window: capture output only, no more judging
+            if fail_deadline is not None:   # fail-linger window: capture only, no more judging
                 ch.wait(lambda _t, fd=fail_deadline: time.monotonic() >= fd,
                         since, max(0.0, fail_deadline - time.monotonic()))
                 return ch.text(since), 'fail'
@@ -121,18 +108,14 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
                 return ch.text(since), 'timeout'
     finally:
         if raw:
-            import termios
             termios.tcdrain(sys.stdin.fileno())
             termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_attrs)
 
 
 def evaluate(out, t):
-    """Assert on output. Rules:
-    expect     list of substrings, all must appear
-    expect_re  list of regexes, all must re.search-hit
-    fail_re    list of regexes, none may hit (e.g. panic/FAIL auto-fail)
-    Returns (PASS bool, problem summary, whether any assertion was configured)
-    """
+    """Assert on output: expect substrings and expect_re regexes must all
+    hit, fail_re regexes must not. Returns (PASS, problem summary, whether
+    any assertion was configured)."""
     problems = []
     for e in t.expect:
         if e not in out:
@@ -148,14 +131,9 @@ def evaluate(out, t):
 
 
 class Runner:
-    """Single-round run orchestration: cold boot -> transport (plugin) ->
-    execute (cmd template, streamed) -> assert -> after-handling.
-
-    One Board maps to many runners — one per [run.<name>] target; the runner
-    holds the board: power-on/quiet power-on/session go through the board
-    domain, power-off finish goes through the power-domain object on the
-    board (board.power). Dependency direction: runner (orchestration) ->
-    board (board domain) -> {power, session/serial}."""
+    """One round: mode-plugin launch (power-on/transport/command) → stream
+    output in → assert → after-handling. One Board maps to many runners —
+    one per [run.<name>] target."""
 
     def __init__(self, board, name, t):
         self.board = board
@@ -164,9 +142,7 @@ class Runner:
         self.t = t
 
     def _finish(self):
-        # after-handling: off powers down | reset reboots back to the prompt |
-        # none keeps state (default). off/reset go through board-domain methods:
-        # the display tap is detached before cutting power (line noise stays off screen)
+        # after-handling: off powers down | reset reboots to the prompt | none keeps state (default)
         t, name = self.t, self.name
         after = t.after or 'none'
         try:
@@ -181,18 +157,11 @@ class Runner:
             print(f'[{name}] after-handling (after={after}) failed: {e}', file=sys.stderr, flush=True)
 
     def run(self):
-        """Run one round: boot-mode plugin launch (power-on/transport/command)
-        -> stream output in -> assert -> after-handling. The mode
-        (uboot/console/watch/…) interprets how the target gets brought up;
-        streaming/assertions/after-handling are shared across all modes.
-
-        After-handling (after) sits in finally: transport failures, plugin
-        sys.exit and exceptional exits run it too (after=none semantics
-        unchanged: keep state).
-
-        Returns (expect-verdict bool, end reason); with no assertions
-        configured the bool is always True; infrastructure errors exit
-        directly."""
+        """Run one round via the mode plugin; returns (verdict, end reason).
+        With no assertions configured the verdict is always True;
+        infrastructure errors exit directly. After-handling sits in finally:
+        transport failures and plugin sys.exit run it too (after=none
+        semantics unchanged: keep state)."""
         cfg, name, t = self.cfg, self.name, self.t
         try:
             mode_name = t.mode or 'uboot'
@@ -201,8 +170,8 @@ class Runner:
                 sys.exit(f'unknown boot mode {mode_name!r}, available: {" ".join(sorted(MODE)) or "(none)"}')
             timeout = float(15 if t.timeout is None else t.timeout)
             interactive = bool(t.interactive)
-            ch, cmdline, done = mode(cfg).launch(self)   # the specific object = this target's runner
-            if done is not None:   # launch already concluded itself (e.g. uboot loads without executing)
+            ch, cmdline, done = mode(cfg).launch(self)
+            if done is not None:   # launch concluded itself (e.g. uboot loads without executing)
                 return True, done
             out, ended = _stream_run(ch, cmdline, self.board.prompt,
                                      t, interactive, timeout)
@@ -218,7 +187,7 @@ class Runner:
 
 
 def do_run(cfg, name, repeat=1):
-    """One-shot launch per [run.<name>] in the board config; with repeat>1 loop and summarize"""
+    """One-shot launch per [run.<name>]; with repeat>1 loop and summarize."""
     targets = cfg.run
     if not name:
         if not targets:
@@ -236,10 +205,10 @@ def do_run(cfg, name, repeat=1):
     total = max(1, int(repeat))
     if total > 1 and not t.reset_before:
         print(f'[{name}] repeat>1, enabling reset_before automatically (cold boot each round)', flush=True)
-        t = replace(t, reset_before=True)   # copy-and-inject; the original config stays untouched
+        t = replace(t, reset_before=True)   # copy, original config untouched
 
     with Board(cfg) as board:   # the board owns the single serial channel; closed on exit
-        runner = Runner(board, name, t)   # one board ↔ many runners (one per target)
+        runner = Runner(board, name, t)
         results = []
         for i in range(1, total + 1):
             if total > 1:
@@ -253,14 +222,11 @@ def do_run(cfg, name, repeat=1):
 
 
 def run_collect(cfg, name, repeat=1, tail_lines=60):
-    """Programmatically run a run target (for MCP/automation): captures
-    output, doesn't sys.exit, returns a structured result.
-
-    The display sink is swapped for a per-round buffer (board.set_display)
-    — device output (tap) and orchestration prints all go into buf, never
-    landing on the caller's stdout (MCP's stdout is a protocol channel);
-    stderr isn't captured (left for logs); infrastructure errors become
-    that round's error instead of raising."""
+    """Programmatic run (for MCP/automation): doesn't sys.exit, returns a
+    structured result. The display sink is swapped for a per-round buffer —
+    device output and orchestration prints all go into it, never landing on
+    the caller's stdout (MCP's stdout is a protocol channel); infrastructure
+    errors become that round's error instead of raising."""
     targets = cfg.run
     if name not in targets:
         return {'error': f'undefined boot target {name!r}',
@@ -276,7 +242,7 @@ def run_collect(cfg, name, repeat=1, tail_lines=60):
         rounds = []
         for i in range(1, total + 1):
             buf = io.StringIO()
-            board.set_display(buf)   # this round's device output (tap display) goes into buf too
+            board.set_display(buf)
             ok, ended, err = False, 'none', None
             try:
                 with contextlib.redirect_stdout(buf):
