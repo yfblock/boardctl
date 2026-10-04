@@ -142,20 +142,6 @@ def ls():
         print(f'{cfg["name"]}{desc}')
 
 
-def _check_one(n):
-    """校验单块板:通过打印 '<板名>: OK' 返回 True,失败打印报错返回 False。
-
-    try/except 关在这里把异常翻成返回值,check 主流程保持平铺;
-    未知板/配置无效的判断都在 load_board,报错自带板名"""
-    try:
-        load_board(n)
-    except SystemExit as e:
-        print(e.code)
-        return False
-    print(f'{n}: OK')
-    return True
-
-
 @app.command
 def check(
     name: Annotated[str | None, Parameter(help='板名(省略则校验全部)')] = None,
@@ -164,8 +150,14 @@ def check(
     boards = available_boards()
     if not boards:
         sys.exit(_NO_BOARDS)
-    targets = [name] if name is not None else sorted(boards)
-    failed = [n for n in targets if not _check_one(n)]
+    failed = 0
+    for n in [name] if name is not None else sorted(boards):
+        try:
+            load_board(n)   # 未知板/配置无效的判断都在 load_board,报错自带板名
+            print(f'{n}: OK')
+        except SystemExit as e:
+            failed += 1
+            print(e.code)
     if failed:
         sys.exit(1)
 
