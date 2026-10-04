@@ -1,7 +1,11 @@
-"""板卡配置:目录发现(boards_dirs/available_boards)+ 加载(load_board)。
-加载 = toml 解析 → 旧式写法归一 → msgspec 建模校验(schema.py 声明形状
-与核心默认值;拼错的键/类型/枚举错误在此当场报出)→ 剥 None(缺省即
-缺省)→ 插件段默认值合并(各插件 DEFAULTS 声明,TOML 值优先)。"""
+"""板卡配置:目录发现 + 加载。
+
+- 发现:boards_dirs()/available_boards() 按 $BOARDCTL_BOARDS →
+  ~/.config/boardctl → 包内置示例的优先级找板卡。
+- 加载(load_board):toml 解析 → 旧式写法归一 → msgspec 建模校验
+  (形状与核心默认值见 schema.py)→ 剥 None(缺省即缺省)→ 插件段
+  默认值合并(各插件 DEFAULTS,TOML 值优先)。
+"""
 import os
 import sys
 import tomllib
@@ -48,9 +52,10 @@ def available_boards():
 
 
 def _normalize(data):
-    """旧式写法归一(建模校验之前,让历史配置以新形状过验):
-    - prompt 原住在 [uboot],现归 [console]:无 [console] 段时继承,老配置零改动
-    - 断言键(expect/expect_re/fail_re)标量写法包成列表
+    """旧式写法归一,让历史配置以新形状通过建模校验。
+
+    - prompt 原住在 [uboot],现归 [console]:无 [console] 段时继承;
+    - 断言键(expect/expect_re/fail_re)标量写法包成列表。
     """
     if 'console' not in data:
         p = data.get('uboot', {}).get('prompt')
@@ -65,8 +70,11 @@ def _normalize(data):
 
 
 def _strip_none(o):
-    """剥除 None 值(建模会把可缺省字段实体化成 None;剥掉 = 缺省即缺省,
-    消费端的 t.get('after') 等缺省逻辑行为不变)"""
+    """剥除 None 值。
+
+    建模会把可缺省字段实体化成 None;剥掉即回到缺省,消费端
+    t.get('after') 等默认逻辑行为不变。
+    """
     if isinstance(o, dict):
         return {k: _strip_none(v) for k, v in o.items() if v is not None}
     if isinstance(o, list):
@@ -87,8 +95,7 @@ def load_board(name):
         sys.exit(f'板卡 {name} 配置无效({boards[name]}):\n{e}')
     cfg = _strip_none(msgspec.to_builtins(modeled))
 
-    # 插件自带默认值:按插件类的 CFG_SECTION 声明合并(TOML 值优先;
-    # 用户段已在 cfg 里——含 [loady] 等此前的种子遗漏,现经建模统一带入)。
+    # 插件自带默认值:按插件类的 CFG_SECTION 声明合并,TOML 值优先
     # 函数内 import,避免 config <-> plugins 模块级循环依赖
     from .plugins import all_plugins
     for plugin in all_plugins():
