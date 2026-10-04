@@ -37,20 +37,6 @@ def _on_signal(signum, _frame):
     raise _Interrupted(f'signal {signum}')
 
 
-def _ensure_power_off(cfg):
-    """打断善后:板在开机状态则执行一次关机,保证程序结束后设备是关的"""
-    print('\n[boardctl] 程序被打断,执行关机保证...', file=sys.stderr, flush=True)
-    p = power.Power(cfg)
-    try:
-        state = p.status()
-    except SystemExit:
-        state = None
-    if state is False:
-        return  # 本来就是关的
-    if not p.off(check=False):
-        print('[boardctl] 自动关机失败,请手动确认电源状态', file=sys.stderr)
-
-
 def _board_name(raw):
     """-b 原始值 → 板名:缺省且仅一块用户板(包内置示例不算)时自动选中"""
     if raw is None:
@@ -93,16 +79,29 @@ def run(
     """一键全流程启动(目标配置于 [run.<名字>];省略目标名则列出可用目标)"""
     if repeat < 1:   # 类型已由 int 注解保证,这里只拦范围
         sys.exit(f'--repeat/-r 须为正整数,收到: {repeat!r}')
-    # 打断善后:Ctrl-C/SIGTERM/异常退出时若板开机则关机。cfg 已由 meta
-    # 落定,装钩子之后才进 do_run——板名解析阶段的退出不触发善后
+
+    def ensure_off():
+        """打断善后:板在开机状态则执行一次关机,保证程序结束后设备是关的"""
+        print('\n[boardctl] 程序被打断,执行关机保证...', file=sys.stderr, flush=True)
+        p = power.Power(cfg)          # 闭包直取 cfg,不必传参
+        try:
+            state = p.status()
+        except SystemExit:
+            state = None
+        if state is False:
+            return  # 本来就是关的
+        if not p.off(check=False):
+            print('[boardctl] 自动关机失败,请手动确认电源状态', file=sys.stderr)
+
+    # 钩子在 cfg 已落定后才装:板名解析阶段的退出不触发善后
     old_term = signal.signal(signal.SIGTERM, _on_signal)
     try:
         do_run(cfg, name, repeat)
     except (KeyboardInterrupt, _Interrupted):
-        _ensure_power_off(cfg)
+        ensure_off()
         sys.exit(130)
     except Exception:
-        _ensure_power_off(cfg)
+        ensure_off()
         raise
     finally:
         signal.signal(signal.SIGTERM, old_term)
