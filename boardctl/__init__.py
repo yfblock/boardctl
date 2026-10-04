@@ -24,3 +24,7 @@
                (见 plugins/__init__.py;执行命令是 [run.*].cmd 配置模板,
                不是插件)
 """
+
+# 版本唯一来源:pyproject 经 hatch 动态引用它构建,CLI 的 --version 直读
+# (源码态也显示真版本,不依赖安装元数据)
+__version__ = '0.14.0'

@@ -8,7 +8,6 @@ cyclopts 注解式解析:类型即校验——repeat 声明 int、power state �
 parse_args 的 ignored 传递)——ls/check 不声明即不解析。run 的打断善后
 (_run_guarded)在 cfg 已落定后才装信号钩子:板名解析阶段的退出不触发善后。
 """
-import importlib.metadata
 import os
 import signal
 import sys
@@ -17,19 +16,14 @@ from typing import Annotated, Literal
 import cyclopts
 from cyclopts import Parameter
 
-from . import power
+from . import __version__, power
 from .config import BUNDLED_BOARDS_DIR, available_boards, load_board
 from .runner import do_run
-
-try:
-    _VERSION = importlib.metadata.version('boardctl')
-except importlib.metadata.PackageNotFoundError:
-    _VERSION = '0.0.0'   # 源码态未安装,占位(装好即真版本)
 
 # result_action='return_value':命令成功时 app.meta() 正常返回而不是
 # sys.exit(0)——保持可嵌入(测试/程序化调用);成败退出码由命令自身
 # sys.exit 与错误路径负责
-app = cyclopts.App(name='boardctl', version=_VERSION,
+app = cyclopts.App(name='boardctl', version=__version__,
                    result_action='return_value')
 
 

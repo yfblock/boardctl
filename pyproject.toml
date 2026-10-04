@@ -4,7 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "boardctl"
-version = "0.14.0"
+# 版本号唯一来源是 boardctl/__init__.py 的 __version__(hatch 动态读取)
+dynamic = ["version"]
 description = "开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),插件化传输/执行/电源,板卡配置于 ~/.config/boardctl"
 readme = "README.md"
 license = "MIT"
@@ -21,6 +22,9 @@ boardctl-mcp = "boardctl.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["boardctl"]
+
+[tool.hatch.version]
+path = "boardctl/__init__.py"
 
 
 # 板卡配置唯一来源是 ~/.config/boardctl(或 $BOARDCTL_BOARDS);
