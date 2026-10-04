@@ -10,8 +10,8 @@ means launch concluded itself (e.g. uboot loads without executing ->
 'loaded') and the runner skips streaming.
 
 Division of labor: modes only interpret how a target gets brought up —
-streaming, assertions, after-handling and repeat are held by the runner,
-identical for every mode. Plugins must not import each other."""
+streaming, assertions and after-handling are held by the runner, identical
+for every mode. Plugins must not import each other."""
 import re
 import sys
 from abc import ABC, abstractmethod

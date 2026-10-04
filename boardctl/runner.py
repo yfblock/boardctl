@@ -1,11 +1,10 @@
 """Run orchestration: Runner drives the single-round full flow (power-on →
 transport → execute → assert → after-handling); one Board maps to many
-runners, one per [run.<name>] target; repeat > 1 re-runs rounds and
-summarizes. How a target gets brought up belongs to the mode plugins
-(plugins/mode, selected via [run.*].mode); the streaming engine
-(_stream_run) and the assertion engine (evaluate) are shared — consistent
-verdict and after-handling come from that sharing, not from each plugin's
-diligence."""
+runners, one per [run.<name>] target. How a target gets brought up belongs
+to the mode plugins (plugins/mode, selected via [run.*].mode); the
+streaming engine (_stream_run) and the assertion engine (evaluate) are
+shared — consistent verdict and after-handling come from that sharing, not
+from each plugin's diligence."""
 import contextlib
 import io
 import os
@@ -13,8 +12,6 @@ import re
 import select
 import sys
 import time
-
-from msgspec.structs import replace
 
 from .board import Board
 from .plugins import MODE
@@ -186,8 +183,8 @@ class Runner:
             self._finish()
 
 
-def do_run(cfg, name, repeat=1):
-    """One-shot launch per [run.<name>]; with repeat>1 loop and summarize."""
+def do_run(cfg, name):
+    """One-shot launch per [run.<name>]."""
     targets = cfg.run
     if not name:
         if not targets:
@@ -202,62 +199,37 @@ def do_run(cfg, name, repeat=1):
         sys.exit(f'undefined boot target {name!r}, available: {" ".join(targets) or "(none)"}')
     t = targets[name]
 
-    total = max(1, int(repeat))
-    if total > 1 and not t.reset_before:
-        print(f'[{name}] repeat>1, enabling reset_before automatically (cold boot each round)', flush=True)
-        t = replace(t, reset_before=True)   # copy, original config untouched
+
 
     with Board(cfg) as board:   # the board owns the single serial channel; closed on exit
-        runner = Runner(board, name, t)
-        results = []
-        for i in range(1, total + 1):
-            if total > 1:
-                print(f'===== round {i}/{total} =====', flush=True)
-            results.append(runner.run()[0])
-
-    if total > 1:
-        p = sum(1 for r in results if r)
-        print(f'[{name}] summary: {p}/{total} rounds PASS' + (' ✅' if p == total else ' ❌'))
-    sys.exit(0 if all(results) else 1)
+        ok = Runner(board, name, t).run()[0]
+    sys.exit(0 if ok else 1)
 
 
-def run_collect(cfg, name, repeat=1, tail_lines=60):
+def run_collect(cfg, name, tail_lines=60):
     """Programmatic run (for MCP/automation): doesn't sys.exit, returns a
-    structured result. The display sink is swapped for a per-round buffer —
-    device output and orchestration prints all go into it, never landing on
-    the caller's stdout (MCP's stdout is a protocol channel); infrastructure
-    errors become that round's error instead of raising."""
+    structured result. The display sink is swapped for a buffer — device
+    output and orchestration prints all go into it, never landing on the
+    caller's stdout (MCP's stdout is a protocol channel); infrastructure
+    errors become the result's error instead of raising."""
     targets = cfg.run
     if name not in targets:
         return {'error': f'undefined boot target {name!r}',
                 'available': sorted(targets)}
     t = targets[name]
 
-    total = max(1, int(repeat))
-    if total > 1 and not t.reset_before:
-        t = replace(t, reset_before=True)
+
 
     with Board(cfg) as board:
-        runner = Runner(board, name, t)
-        rounds = []
-        for i in range(1, total + 1):
-            buf = io.StringIO()
-            board.set_display(buf)
-            ok, ended, err = False, 'none', None
-            try:
-                with contextlib.redirect_stdout(buf):
-                    ok, ended = runner.run()
-            except SystemExit as e:
-                err = str(e.code) if isinstance(e.code, str) else f'exit {e.code}'
-            output = buf.getvalue()
-            rounds.append({
-                'round': i,
-                'pass': bool(ok) and err is None,
-                'ended': ended,
-                'error': err,
-                'output_tail': '\n'.join(output.splitlines()[-tail_lines:]),
-            })
-    passed = sum(1 for r in rounds if r['pass'])
-    return {'board': cfg.name, 'target': name, 'repeat': total,
-            'rounds': rounds, 'passed': passed, 'failed': total - passed,
-            'all_pass': passed == total}
+        buf = io.StringIO()
+        board.set_display(buf)
+        ok, ended, err = False, 'none', None
+        try:
+            with contextlib.redirect_stdout(buf):
+                ok, ended = Runner(board, name, t).run()
+        except SystemExit as e:
+            err = str(e.code) if isinstance(e.code, str) else f'exit {e.code}'
+    return {'board': cfg.name, 'target': name,
+            'pass': bool(ok) and err is None,
+            'ended': ended, 'error': err,
+            'output_tail': '\n'.join(buf.getvalue().splitlines()[-tail_lines:])}

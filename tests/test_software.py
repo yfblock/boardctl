@@ -473,36 +473,37 @@ from boardctl import cli as _cli  # noqa: E402
 
 _runcalls = []
 with _mock.patch.object(_cli, 'do_run',
-                        lambda cfg, name, repeat=1: _runcalls.append((cfg.name, name, repeat))), \
+                        lambda cfg, name: _runcalls.append((cfg.name, name))), \
         _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/example.toml'}), \
         _mock.patch.object(_cli, 'load_board', lambda n: BoardCfg(name=n)):
-    # global -b before the subcommand + positional arg + short flag -r (cyclopts delivers per the int annotation)
-    _cli.app.meta(['-b', 'example', 'run', 'hello', '-r', '3'])
-    assert _runcalls == [('example', 'hello', 3)], _runcalls
+    # global -b before the subcommand + positional arg
+    _cli.app.meta(['-b', 'example', 'run', 'hello'])
+    assert _runcalls == [('example', 'hello')], _runcalls
     # -b omitted: auto-selected when there's exactly one user board
     _runcalls.clear()
     _cli.app.meta(['run', 'hello'])
-    assert _runcalls == [('example', 'hello', 1)], _runcalls
+    assert _runcalls == [('example', 'hello')], _runcalls
     # target name omitted = list targets (do_run receives None)
     _runcalls.clear()
     _cli.app.meta(['run'])
-    assert _runcalls == [('example', None, 1)], _runcalls
+    assert _runcalls == [('example', None)], _runcalls
     # all-digit board name delivered as str per the annotation (in the fire era it would be literalized to int, needing a str() fallback)
     _runcalls.clear()
     _cli.app.meta(['-b', '2026', 'run', 'x'])
-    assert _runcalls == [('2026', 'x', 1)], _runcalls
+    assert _runcalls == [('2026', 'x')], _runcalls
 
-# illegal repeat: caught at the parse layer; assert nonzero, not a specific code (framework-owned)
+# -r/--repeat is retired: multi-round stress runs are shell loops over the
+# one-shot flow (tool minimalism); an unknown option still errors at the parse layer
 with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/e.toml'}), \
         _mock.patch.object(_cli, 'load_board', lambda n: BoardCfg(name=n)):
     with contextlib.redirect_stdout(_io2.StringIO()) as _so, \
             contextlib.redirect_stderr(_io2.StringIO()) as _se:
         try:
-            _cli.app.meta(['run', 'hello', '-r', 'abc'])
-            raise AssertionError('an illegal repeat should be rejected')
+            _cli.app.meta(['run', 'hello', '-r', '3'])
+            raise AssertionError('a retired option should be rejected')
         except SystemExit as e:
             assert e.code not in (0, None), e.code
-    assert 'abc' in _so.getvalue() + _se.getvalue(), (_so.getvalue(), _se.getvalue())
+    assert '-r' in _so.getvalue() + _se.getvalue(), (_so.getvalue(), _se.getvalue())
 
 # multiple user boards and no -b: clear error exit
 with _mock.patch.object(_cli, 'available_boards',

@@ -1,9 +1,9 @@
 """CLI entry: run (one-shot full flow) + ls + power + check, cyclopts
-annotation-driven — the type IS the validation (repeat is int, power state
-is a Literal; illegal arguments error at the parse layer). The global
--b/--board is received at the meta layer, which resolves the board config
-once and injects it into subcommands declaring cfg (ls/check don't declare
-it, so it isn't resolved)."""
+annotation-driven — the type IS the validation (power state is a Literal;
+illegal arguments error at the parse layer). The global -b/--board is
+received at the meta layer, which resolves the board config once and
+injects it into subcommands declaring cfg (ls/check don't declare it, so
+it isn't resolved)."""
 import os
 import signal
 import sys
@@ -72,14 +72,11 @@ def _launch(
 @app.command
 def run(
     name: Annotated[str | None, Parameter(help='boot target name (omitted: list available targets)')] = None,
-    repeat: Annotated[int, Parameter(name=['-r', '--repeat'],
-                                     help='repeat count (>1: cold boot each round, PASS/FAIL summary at the end)')] = 1,
     *,
     cfg: Annotated[BoardCfg, Parameter(parse=False)],
 ):
     """One-shot full-flow boot (target configured in [run.<name>]; omit the target name to list available targets)"""
-    if repeat < 1:   # int annotation guarantees the type; only the range is checked here
-        sys.exit(f'--repeat/-r must be a positive integer, got: {repeat!r}')
+
 
     def ensure_off():
         print('\n[boardctl] interrupted, ensuring power-off...', file=sys.stderr, flush=True)
@@ -96,7 +93,7 @@ def run(
     # hook installed after cfg is settled: exits during board-name resolution don't trigger cleanup
     old_term = signal.signal(signal.SIGTERM, _on_signal)
     try:
-        do_run(cfg, name, repeat)
+        do_run(cfg, name)
     except (KeyboardInterrupt, _Interrupted):
         ensure_off()
         sys.exit(130)

@@ -8,7 +8,7 @@ directory.
 
 - `run <target>`: automatic power-on → TFTP/Ymodem transport → `cmd`
   template execution (`go {addr}`, `booti …`) → output assertions
-  (PASS/FAIL) → automatic power-off; `--repeat N` for multi-round stress runs
+  (PASS/FAIL) → automatic power-off
 - Serial output is **shown as captured from power-on** (resident capture +
   display hooked on capture events): boot logs, command echo, transport and
   execution output all visible, no window gaps
@@ -40,7 +40,7 @@ cp <template> ~/.config/boardctl/myboard.toml   # adapt serial address/power com
 boardctl ls                        # list configured boards
 boardctl -b myboard run            # list this board's boot targets
 boardctl -b myboard run hello      # full flow: power-on → transport → execute → assert → power-off
-boardctl -b myboard run hello -r 10   # 10 stress rounds, summary N/10 PASS
+for i in $(seq 10); do boardctl -b myboard run hello; done   # multi-round = a shell loop (exit code per round)
 boardctl -b myboard power status   # query power (on/off)
 boardctl -b myboard power off      # manual power-off (on likewise)
 boardctl check                     # validate board config format (all boards when the name is omitted)
@@ -132,9 +132,10 @@ claude mcp add boardctl -- boardctl-mcp      # Claude Code; for Desktop, fill in
 
 The model can then call three tools: `ls_boards` (list boards and targets),
 `power_status` (query power), and `run_target` (full-flow test on real
-hardware: automatic power on/off → transport → execute → assert, `repeat`
-supports stress runs). The tools really control the hardware power, as noted
-in their descriptions; mind client timeout settings for long tasks.
+hardware: automatic power on/off → transport → execute → assert; for
+multi-round stress runs the client calls it repeatedly). The tools really
+control the hardware power, as noted in their descriptions; mind client
+timeout settings for long tasks.
 
 ## Development
 

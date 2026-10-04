@@ -16,8 +16,6 @@ except ImportError as e:  # pragma: no cover
 
 mcp = FastMCP('boardctl')
 
-MAX_SHOW_ROUNDS = 3   # max rounds shown in run_target results
-
 
 def _tool_guard(fn):
     """The underlying APIs lean on sys.exit; SystemExit would drag the tool
@@ -30,13 +28,6 @@ def _tool_guard(fn):
             msg = e.code if isinstance(e.code, str) else f'exit {e.code}'
             return f'error: {msg}'
     return wrapper
-
-
-def _format_round(r):
-    head = (f"round {r['round']}: {'PASS' if r['pass'] else 'FAIL'}"
-            + (f", end={r.get('ended', '?')}" if r.get('ended') else '')
-            + (f"({r['error']})" if r.get('error') else ''))
-    return head + '\n' + r.get('output_tail', '')
 
 
 @mcp.tool()
@@ -63,22 +54,21 @@ def power_status(board: str) -> str:
 
 @mcp.tool()
 @_tool_guard
-def run_target(board: str, target: str, repeat: int = 1) -> str:
+def run_target(board: str, target: str) -> str:
     """Run the one-shot full test flow on a dev board: auto power-on → transport (TFTP/Ymodem) → execute (go/source/booti)
-    → output assertions → auto power-off. repeat>1 is a multi-round stress run.
+    → output assertions → auto power-off.
 
-    Note: really controls the hardware power; each round takes ~15-60 seconds.
-    Returns per-round PASS/FAIL, assertion details and the tail of serial output."""
-    result = runner.run_collect(load_board(board), target, repeat)
+    Note: really controls the hardware power; a run takes ~15-60 seconds.
+    Returns PASS/FAIL, assertion details and the tail of serial output.
+    For multi-round stress runs, call this tool repeatedly."""
+    result = runner.run_collect(load_board(board), target)
     if 'error' in result:
         return (f"error: {result['error']}\n"
                 f"available targets: {', '.join(result.get('available', [])) or '(none)'}")
-    summary = (f"summary: {result['passed']}/{result['repeat']} rounds PASS"
-               + (' ✅' if result['all_pass'] else ' ❌'))
-    shown = '\n\n'.join(_format_round(r) for r in result['rounds'][:MAX_SHOW_ROUNDS])
-    extra = (f"\n\n(showing the first {MAX_SHOW_ROUNDS} of {result['repeat']} rounds)"
-             if result['repeat'] > MAX_SHOW_ROUNDS else '')
-    return f'{summary}\n\n{shown}{extra}'
+    head = (('PASS' if result['pass'] else 'FAIL')
+            + (f", end={result['ended']}" if result['ended'] else '')
+            + (f"({result['error']})" if result['error'] else ''))
+    return head + '\n\n' + result['output_tail']
 
 
 def main():

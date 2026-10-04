@@ -8,6 +8,14 @@
   tap lifecycle, park/resume, ordering discipline) kept. Code verified
   AST-identical before/after (sole functional-adjacent delta: dropped a
   redundant `import termios` in runner's interactive-mode finally)
+- **Breaking: `run --repeat/-r` removed (tool minimalism)** — multi-round
+  stress runs are a shell loop over the one-shot flow
+  (`for i in $(seq N); do boardctl -b b run t; done`), exit code per round
+  as usual. With the feature retired: do_run/run_collect lost their loops,
+  round headers and summaries; run_collect returns a flat single-run
+  result; the MCP run_target tool lost its repeat parameter (clients call
+  it repeatedly for stress runs); the repeat>1 auto-enable of reset_before
+  is gone with it
 
 ## 0.14.0 - 2026-10-04
 
