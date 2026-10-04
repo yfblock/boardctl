@@ -1,18 +1,19 @@
 """run orchestration domain: Runner drives the single-round full flow
-(power-on -> transport -> execute -> assert -> after-handling); one Board
-maps to many runners — one per [run.<name>] target; with repeat > 1 the same
-runner re-runs multiple rounds and summarizes. Output display hangs on
-capture events (the stream tap, attached before power-on / detached before
-power-off by the board domain): on the CLI everything is shown as captured
-from power-on; programmatic callers use run_collect (which swaps the display
-sink for a per-round buffer, so device bytes never reach the caller's
-stdout, and returns a structured result). How a target "gets brought up" is
-interpreted by the boot-mode plugin family (plugins/mode, selected via
-[run.*].mode); the streaming engine (_stream_run, which consumes the board's
-resident capture stream — watermarks + event wakeup, see stream.py) and the
-assertion engine (evaluate) are shared code — consistent verdict and
-after-handling semantics are guaranteed by that sharing, not by each
-plugin's diligence."""
+(power-on -> transport -> execute -> assert -> after-handling). One Board
+maps to many runners, one per [run.<name>] target; repeat > 1 re-runs
+rounds and summarizes.
+
+Display hangs on capture events (the stream tap, attached before power-on
+and detached before power-off by the board domain): the CLI shows
+everything as captured from power-on; run_collect swaps the display sink
+for a per-round buffer (device bytes never reach the caller's stdout) and
+returns a structured result.
+
+How a target gets brought up is the boot-mode family's interpretation
+(plugins/mode, selected via [run.*].mode). The streaming engine
+(_stream_run: watermarks + event wakeup, see stream.py) and the assertion
+engine (evaluate) are shared code — consistent verdict and after-handling
+come from that sharing, not from each plugin's diligence."""
 import contextlib
 import io
 import os
