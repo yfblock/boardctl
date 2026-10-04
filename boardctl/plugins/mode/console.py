@@ -4,7 +4,7 @@
 (如 base64 粘贴),再放开 file/method。"""
 import sys
 
-from . import RunMode, expand_cmd
+from . import RunMode, expand_cmd, target_vars
 
 
 class ConsoleMode(RunMode):
@@ -16,14 +16,14 @@ class ConsoleMode(RunMode):
     def launch(self, runner):
         board, name, t = runner.board, runner.name, runner.t   # 该 runner 的对象数据
         for k in ('file', 'method', 'addr', 'entry'):
-            if t.get(k):
+            if getattr(t, k):
                 sys.exit(f'run.{name}(mode=console)不认 {k}:控制台模式只执行命令,'
                          '无传输/地址语义(要传文件用 mode = "uboot")')
-        if not t.get('cmd'):
+        if not t.cmd:
             sys.exit(f'run.{name}(mode=console)需要配置 cmd(直接在控制台执行的命令)')
-        cmdline = expand_cmd(name, t)
+        cmdline = expand_cmd(name, t.cmd, target_vars(t))
 
-        if t.get('reset_before'):
+        if t.reset_before:
             print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
             board.cold_boot()
 

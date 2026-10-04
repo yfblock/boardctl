@@ -2,9 +2,8 @@
 
 - 发现:boards_dirs()/available_boards() 按 $BOARDCTL_BOARDS →
   ~/.config/boardctl → 包内置示例的优先级找板卡。
-- 加载(load_board):toml 解析 → msgspec 建模校验(形状与核心默认值
-  见 schema.py)→ 剥 None(缺省即缺省)→ 插件段默认值合并(各插件
-  DEFAULTS,TOML 值优先)。
+- 加载(load_board):toml 解析 → 注入板名 → msgspec 建模校验
+  (形状与默认值见 schema.py)→ 直接以 BoardCfg 模型对象返回。
 """
 import os
 import sys
@@ -51,19 +50,6 @@ def available_boards():
     return names
 
 
-def _strip_none(o):
-    """剥除 None 值。
-
-    建模会把可缺省字段实体化成 None;剥掉即回到缺省,消费端
-    t.get('after') 等默认逻辑行为不变。
-    """
-    if isinstance(o, dict):
-        return {k: _strip_none(v) for k, v in o.items() if v is not None}
-    if isinstance(o, list):
-        return [_strip_none(v) for v in o]
-    return o
-
-
 def load_board(name):
     boards = available_boards()
     if name not in boards:
@@ -72,19 +58,6 @@ def load_board(name):
         data = tomllib.load(f)
     data['name'] = name
     try:
-        modeled = msgspec.convert(data, schema.BoardCfg, strict=False)
+        return msgspec.convert(data, schema.BoardCfg, strict=False)
     except msgspec.ValidationError as e:
         sys.exit(f'板卡 {name} 配置无效({boards[name]}):\n{e}')
-    cfg = _strip_none(msgspec.to_builtins(modeled))
-
-    # 插件自带默认值:按插件类的 CFG_SECTION 声明合并,TOML 值优先
-    # 函数内 import,避免 config <-> plugins 模块级循环依赖
-    from .plugins import all_plugins
-    for plugin in all_plugins():
-        section = getattr(plugin, 'CFG_SECTION', None)
-        defaults = getattr(plugin, 'DEFAULTS', None)
-        if section and isinstance(defaults, dict):
-            merged = dict(defaults)
-            merged.update(cfg.get(section, {}))
-            cfg[section] = merged
-    return cfg

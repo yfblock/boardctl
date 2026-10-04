@@ -72,7 +72,9 @@ boardctl check                     # 校验板卡配置格式(省略板名则全
 ```
 boardctl/
 ├── cli.py        命令行接线(cyclopts 注解式,无业务逻辑)
-├── config.py     板卡 TOML 加载(不依赖其他模块)
+├── schema.py     配置建模(msgspec.Struct):全部段的形状与默认值单一来源,
+│                 加载即校验;配置以 BoardCfg 模型对象流通
+├── config.py     板卡 TOML 加载 → BoardCfg 模型 ← schema
 ├── serial.py     串口域:纯字节通道 + fd 借出(不依赖其他模块)
 ├── stream.py     常驻捕获域:读线程持续捕字节进日志,等待 = 水位 + 谓词 + 条件变量;
 │                 显示 tap 挂捕获事件即捕即显 ← serial
@@ -91,13 +93,14 @@ boardctl/
 ```
 
 **插件即类**(基类与约定写在各 `plugins/<族>/__init__.py`;插件模块提供
-`PLUGIN = <类>`,类声明 `NAME` 与可选 `CFG_SECTION` + `DEFAULTS` 自带配置
-默认值,TOML 优先;新建插件 = 丢一个文件):
+`PLUGIN = <类>`,类声明 `NAME`;配置段的形状与默认值统一住 `schema.py`,
+插件经 cfg 属性自取所需段;新建插件 = 丢一个文件):
 
 - 传输插件:`Transport` 子类,`send(stream, path, addr) -> bool`(stream 为板借出的常驻捕获流,插件不自开连接;fd 借出前 `park()`、归还后 `resume()`)
 - 电源插件:`PowerDevice` 子类,`on()` / `off()` / `status() -> bool | None`
 
-新建插件 = 加一个文件,`[run].method`/`[power].method` 立即可用,核心零改动
+新建插件 = 加一个文件,`[run].method`/`[power].method` 立即可用,核心零改动;
+带新配置段时在 `schema.BoardCfg` 加一个字段即可(暂不定形的段可先声明 dict)
 (执行命令不是插件:它是 `[run].cmd` 配置模板,由 runner 展开)。
 
 ## MCP(让 Claude 等客户端直接操控开发板)

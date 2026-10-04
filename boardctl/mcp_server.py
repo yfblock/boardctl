@@ -49,10 +49,10 @@ def ls_boards() -> str:
     lines = []
     for name in sorted(available_boards()):
         cfg = load_board(name)
-        lines.append(f"{name} — {cfg.get('description', '')}")
-        for k, t in cfg.get('run', {}).items():
-            lines.append(f"  目标 {k}: {t.get('desc', '')} "
-                         f"(cmd={t.get('cmd') or t.get('mode') or '(只加载)'}, method={t.get('method', 'tftp')})")
+        lines.append(f"{name} — {cfg.description}")
+        for k, t in cfg.run.items():
+            lines.append(f"  目标 {k}: {t.desc or ''} "
+                         f"(cmd={t.cmd or t.mode or '(只加载)'}, method={t.method or 'tftp'})")
     return '\n'.join(lines) or '(没有配置任何板卡;模板见包内置 example.toml)'
 
 

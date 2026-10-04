@@ -25,7 +25,7 @@ class Board:
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.name = cfg['name']
+        self.name = cfg.name
         self.serial = SerialChannel.from_cfg(cfg)   # 一块板 ↔ 一截串口([serial] 段)
         self.stream = ConsoleStream(self.serial)    # 读侧唯一归捕获线程
         self.power = Power(cfg)                     # 一块板 ↔ 一个电源([power] 段)

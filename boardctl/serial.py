@@ -17,7 +17,7 @@ class SerialChannel:
 
     @classmethod
     def from_cfg(cls, cfg):
-        return cls(cfg['serial']['url'], cfg['serial']['timeout'])
+        return cls(cfg.serial.url, cfg.serial.timeout)
 
     def read(self, n=256):
         return self.ser.read(n)

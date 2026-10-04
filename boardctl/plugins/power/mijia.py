@@ -22,16 +22,16 @@ class MijiaPower(PowerDevice):
 
     def _device(self):
         with self._lock:
-            p = self.cfg['power'].get('mijia', {})
-            key = (p.get('did'), p.get('dev_name'))
+            p = self.cfg.power.mijia
+            key = (p.did, p.dev_name)
             if key not in self._dev_cache:
                 from mijiaAPI.apis import mijiaAPI
                 from mijiaAPI.devices import mijiaDevice
                 kwargs = {}
-                if p.get('did'):
-                    kwargs['did'] = p['did']
-                elif p.get('dev_name'):
-                    kwargs['dev_name'] = p['dev_name']
+                if p.did:
+                    kwargs['did'] = p.did
+                elif p.dev_name:
+                    kwargs['dev_name'] = p.dev_name
                 else:
                     raise ValueError('[power.mijia] 需要 dev_name 或 did')
                 self._dev_cache[key] = mijiaDevice(mijiaAPI(), **kwargs)
@@ -39,7 +39,7 @@ class MijiaPower(PowerDevice):
 
     def _prop(self):
         """开关量属性名:默认 'on';非 'on' 的设备在 [power.mijia] 配 prop"""
-        return self.cfg['power'].get('mijia', {}).get('prop', 'on')
+        return self.cfg.power.mijia.prop
 
     def on(self):
         self._device().set(self._prop(), True)

@@ -18,6 +18,7 @@ from cyclopts import Parameter
 
 from . import __version__, power
 from .config import BUNDLED_BOARDS_DIR, available_boards, load_board
+from .schema import BoardCfg
 from .runner import do_run
 
 # result_action='return_value':命令成功时 app.meta() 正常返回而不是
@@ -103,7 +104,7 @@ def run(
     repeat: Annotated[int, Parameter(name=['-r', '--repeat'],
                                      help='重复轮数(>1 时每轮冷启动,结束汇总 PASS/FAIL)')] = 1,
     *,
-    cfg: Annotated[dict, Parameter(parse=False)],
+    cfg: Annotated[BoardCfg, Parameter(parse=False)],
 ):
     """一键全流程启动(目标配置于 [run.<名字>];省略目标名则列出可用目标)"""
     if repeat < 1:   # 类型已由 int 注解保证,这里只拦范围
@@ -116,7 +117,7 @@ def power_ctl(
     state: Annotated[Literal['on', 'off', 'status'],
                      Parameter(help='on 开机 / off 关机 / status 查询状态')],
     *,
-    cfg: Annotated[dict, Parameter(parse=False)],
+    cfg: Annotated[BoardCfg, Parameter(parse=False)],
 ):
     """电源控制(经电源插件:mijia/command)"""
     p = power.Power(cfg)
@@ -125,7 +126,7 @@ def power_ctl(
         if val is not None:
             print('开' if val else '关')
     else:
-        print(f'[{cfg["name"]}] 电源{"开机" if state == "on" else "关机"}({p.desc})',
+        print(f'[{cfg.name}] 电源{"开机" if state == "on" else "关机"}({p.desc})',
               flush=True)
         (p.on if state == 'on' else p.off)()
 
@@ -138,8 +139,8 @@ def ls():
         sys.exit(_NO_BOARDS)
     for name in sorted(boards):
         cfg = load_board(name)
-        desc = f' — {cfg["description"]}' if cfg['description'] else ''
-        print(f'{cfg["name"]}{desc}')
+        desc = f' — {cfg.description}' if cfg.description else ''
+        print(f'{cfg.name}{desc}')
 
 
 @app.command

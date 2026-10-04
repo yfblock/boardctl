@@ -10,7 +10,7 @@ from .config import BASE_DIR
 
 
 def run(cfg, command, check=True, capture=False):
-    host = cfg.get('ssh_host', '')
+    host = cfg.ssh_host
     if host:
         argv = ['ssh', '-o', 'BatchMode=yes', host, command]
         cwd = None

@@ -15,7 +15,8 @@
                静默上电/会话工厂;显示(tap)生命周期:上电前挂、断电前摘、
                程序化调用可换出口;上下文管理器起停捕获线程(依赖 power,
                serial, stream, console)
-  config.py    板卡 TOML 加载(不依赖其他模块)
+  config.py    板卡 TOML 加载 → BoardCfg 模型对象(依赖 schema)
+  schema.py    配置建模:全部段的形状与默认值单一来源,加载即校验
   runner.py    run 编排域:Runner,一块板 ↔ 多个 runner(依赖 board + plugins)
   cli.py       命令行入口,只做接线(cyclopts 注解式)
   mcp_server.py MCP server(依赖 runner)

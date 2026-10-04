@@ -5,16 +5,16 @@ import os
 import sys
 
 from ...config import BASE_DIR
-from . import RunMode, expand_cmd
+from . import RunMode, expand_cmd, target_vars
 
 
 def _expand(cfg, name, t):
     """uboot 命令展开:{addr}/{entry} 缺省链——addr <- uboot.load_addr,
     entry <- addr(目标键优先)"""
-    tt = dict(t)
-    tt.setdefault('addr', cfg['uboot']['load_addr'])
-    tt.setdefault('entry', tt['addr'])
-    return expand_cmd(name, tt)
+    vals = target_vars(t)
+    vals.setdefault('addr', cfg.uboot.load_addr)
+    vals.setdefault('entry', vals['addr'])
+    return expand_cmd(name, t.cmd, vals)
 
 
 class UbootMode(RunMode):
@@ -25,28 +25,28 @@ class UbootMode(RunMode):
 
     def launch(self, runner):
         board, name, t = runner.board, runner.name, runner.t   # 该 runner 的对象数据
-        cmdline = _expand(self.cfg, name, t) if t.get('cmd') else None
+        cmdline = _expand(self.cfg, name, t) if t.cmd else None
 
-        if t.get('reset_before'):
+        if t.reset_before:
             print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
             board.cold_boot()
 
-        if 'file' not in t:
+        if t.file is None:
             sys.exit(f'run.{name}(mode=uboot)需要配置 file;'
                      '不传输直接执行命令用 mode = "console",被动观察用 mode = "watch"')
-        path = t['file']
+        path = t.file
         if not os.path.isabs(path):
             path = os.path.join(BASE_DIR, path)
         if not os.path.isfile(path):
             sys.exit(f'文件不存在: {path}(先构建?)')
-        addr = t.get('addr', self.cfg['uboot']['load_addr'])   # 加载地址(跳转地址 {entry} 由 cmd 模板取)
-        method = t.get('method', 'tftp')
+        addr = t.addr or self.cfg.uboot.load_addr   # 加载地址(跳转地址 {entry} 由 cmd 模板取)
+        method = t.method or 'tftp'
         from .. import TRANSPORT   # 函数内 import:注册表由插件包 __init__ 填充
         transport = TRANSPORT.get(method)
         if transport is None:
             sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
 
-        print(f'[{name}] 传输 {t["file"]} ({method}) -> {addr}', flush=True)
+        print(f'[{name}] 传输 {t.file} ({method}) -> {addr}', flush=True)
         if not transport(self.cfg).send(board.stream, path, addr):
             sys.exit(1)
 

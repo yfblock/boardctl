@@ -12,14 +12,12 @@ from . import Transport
 
 class LoadyTransport(Transport):
     NAME = 'loady'
-    CFG_SECTION = 'loady'
-    DEFAULTS = {'sender': ''}   # Ymodem 发送器;空则自动找 lrzsz-sb / sb
 
     def __init__(self, cfg):
         self.cfg = cfg
 
     def _sender(self):
-        sender = self.cfg['loady'].get('sender')
+        sender = self.cfg.loady.sender
         if sender and os.path.isfile(sender):
             return sender
         return shutil.which('lrzsz-sb') or shutil.which('sb')
@@ -29,7 +27,7 @@ class LoadyTransport(Transport):
         sender = self._sender()
         if not sender:
             sys.exit('找不到 Ymodem 发送器(Arch: lrzsz 包的 lrzsz-sb;Debian: lrzsz 的 sb)')
-        s = ConsoleSession(channel, self.cfg['console']['prompt'])
+        s = ConsoleSession(channel, self.cfg.console.prompt)
         ok, _ = s.wait_prompt()
         if not ok:
             sys.exit('等待 U-Boot 提示符超时,设备可能不在 U-Boot 命令行')

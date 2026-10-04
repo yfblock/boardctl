@@ -12,14 +12,12 @@ from . import PowerDevice
 
 class CommandPower(PowerDevice):
     NAME = 'command'
-    CFG_SECTION = 'power'
-    DEFAULTS = {'on_cmd': None, 'off_cmd': None, 'status_cmd': None}
 
     def __init__(self, cfg):
         self.cfg = cfg
 
     def _cmd(self, key):
-        command = self.cfg['power'].get(key)
+        command = getattr(self.cfg.power, key)
         if not command:
             sys.exit(f'[power] 缺少 {key}(command 电源插件需要 on_cmd/off_cmd)')
         return command
@@ -31,7 +29,7 @@ class CommandPower(PowerDevice):
         run_shell(self.cfg, self._cmd('off_cmd'), check=True)
 
     def status(self):
-        status = self.cfg['power'].get('status_cmd')
+        status = self.cfg.power.status_cmd
         if status:
             run_shell(self.cfg, status, check=False)
         return None   # 任意命令的输出无法可靠解析为 bool

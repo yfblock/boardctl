@@ -14,7 +14,7 @@ class Power:
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.method = cfg['power'].get('method') or 'command'   # 未配置时默认命令插件
+        self.method = cfg.power.method   # 缺省 command(schema 声明)
         from .plugins import POWER   # 函数内 import:避免 board→power→plugins→插件→board 环
         cls = POWER.get(self.method)
         if cls is None:
@@ -50,7 +50,7 @@ class Power:
     def reset_delay(self):
         """断电→上电间隔秒数(冷启动/重启/静默上电共用的节拍值;
         节拍编排 off→延时→on 在板域 board.py)"""
-        return float(self.cfg['power'].get('reset_delay', 3))
+        return self.cfg.power.reset_delay
 
     def status(self):
         """查询状态;返回 bool,无法解析(如 command 插件)时返回 None"""

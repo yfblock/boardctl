@@ -15,6 +15,8 @@ import select
 import sys
 import time
 
+from msgspec.structs import replace
+
 from .board import Board
 from .plugins import MODE
 
@@ -24,8 +26,8 @@ QUIT_BYTE = 0x1C   # 交互模式下退出
 def _positives_satisfied(t, buf):
     """正向断言(expect 子串 + expect_re 正则)是否已全部命中;
     未配置正向断言时返回 False(不以 matched 结束,等提示符/超时)"""
-    subs = t.get('expect') or []
-    pats = t.get('expect_re') or []
+    subs = t.expect
+    pats = t.expect_re
     if not subs and not pats:
         return False
     for e in subs:
@@ -40,7 +42,7 @@ def _positives_satisfied(t, buf):
 def _fail_hit(t, buf):
     """负向断言 fail_re 是否命中(流式即时判负:一命中就收工,
     不等 timeout——panic 类故障立刻断电止损);明细由 evaluate 统一给出"""
-    for p in t.get('fail_re') or []:
+    for p in t.fail_re:
         if re.search(p, buf):
             return True
     return False
@@ -61,7 +63,7 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
 
     deadline = None if (interactive and sys.stdin.isatty()) else time.monotonic() + timeout
     fail_deadline = None
-    linger = max(0.0, float(t.get('fail_linger', 2)))   # fail 命中后的续收秒数
+    linger = max(0.0, float(2 if t.fail_linger is None else t.fail_linger))   # fail 命中后的续收秒数
     raw = False
 
     def _ended(text):
@@ -119,16 +121,16 @@ def evaluate(out, t):
     返回 (是否PASS, 问题摘要, 是否配置了断言)
     """
     problems = []
-    for e in t.get('expect') or []:
+    for e in t.expect:
         if e not in out:
             problems.append(f'expect 未出现: {e!r}')
-    for p in t.get('expect_re') or []:
+    for p in t.expect_re:
         if not re.search(p, out):
             problems.append(f'expect_re 未匹配: {p!r}')
-    for p in t.get('fail_re') or []:
+    for p in t.fail_re:
         if re.search(p, out):
             problems.append(f'fail_re 命中: {p!r}')
-    checked = bool(t.get('expect') or t.get('expect_re') or t.get('fail_re'))
+    checked = bool(t.expect or t.expect_re or t.fail_re)
     return (not problems), '; '.join(problems), checked
 
 
@@ -149,7 +151,7 @@ class Runner:
         # 收尾:off 断电 | reset 重启回提示符 | none 保持现状(缺省)。
         # off/reset 经板域方法:显示 tap 先摘再断电(线路噪声不上屏)
         t, name = self.t, self.name
-        after = t.get('after', 'none')
+        after = t.after or 'none'
         try:
             if after == 'off':
                 print(f'[{name}] 断电收尾(after=off)', flush=True)
@@ -170,12 +172,12 @@ class Runner:
         基础设施错误直接退出。"""
         cfg, name, t = self.cfg, self.name, self.t
         try:
-            mode_name = t.get('mode') or 'uboot'
+            mode_name = t.mode or 'uboot'
             mode = MODE.get(mode_name)
             if mode is None:
                 sys.exit(f'未知启动模式 {mode_name!r},可用: {" ".join(sorted(MODE)) or "(无)"}')
-            timeout = float(t.get('timeout', 15))
-            interactive = bool(t.get('interactive'))
+            timeout = float(15 if t.timeout is None else t.timeout)
+            interactive = bool(t.interactive)
             ch, cmdline, done = mode(cfg).launch(self)   # 特定对象 = 该目标的 runner
             if done is not None:   # launch 已自行收束(如 uboot 只加载不执行)
                 return True, done
@@ -194,24 +196,24 @@ class Runner:
 
 def do_run(cfg, name, repeat=1):
     """按板卡配置里的 [run.<名字>] 一键启动;repeat>1 时循环并汇总"""
-    targets = cfg.get('run', {})
+    targets = cfg.run
     if not name:
         if not targets:
-            sys.exit(f'{cfg["name"]} 配置里没有 [run.*] 启动目标')
-        print(f'{cfg["name"]} 可启动目标(boardctl run <名字>):')
+            sys.exit(f'{cfg.name} 配置里没有 [run.*] 启动目标')
+        print(f'{cfg.name} 可启动目标(boardctl run <名字>):')
         for k, t in targets.items():
-            desc = t.get('desc', '')
-            what = t.get('cmd') or t.get('mode') or '(只加载)'
-            print(f'  {k:12} {what:26} {t.get("file", "")}  {desc}')
+            desc = t.desc or ''
+            what = t.cmd or t.mode or '(只加载)'
+            print(f'  {k:12} {what:26} {t.file or ""}  {desc}')
         return
     if name not in targets:
         sys.exit(f'未定义的启动目标 {name!r},可用: {" ".join(targets) or "(无)"}')
-    t = dict(targets[name])   # 复制,repeat 注入不污染原配置
+    t = targets[name]
 
     total = max(1, int(repeat))
-    if total > 1 and not t.get('reset_before'):
+    if total > 1 and not t.reset_before:
         print(f'[{name}] repeat>1,自动启用 reset_before(每轮冷启动)', flush=True)
-        t['reset_before'] = True
+        t = replace(t, reset_before=True)   # 复制注入,不污染原配置
 
     with Board(cfg) as board:   # 板持有唯一串口通道,结束时关
         runner = Runner(board, name, t)   # 一块板 ↔ 多个 runner(每目标一个)
@@ -232,15 +234,15 @@ def run_collect(cfg, name, repeat=1, tail_lines=60):
     显示出口换成本轮缓冲(board.set_display)——设备输出(tap)与编排打印
     都进 buf,绝不落调用方进程的 stdout(MCP 的 stdout 是协议通道);
     stderr 不捕获(留给日志);基础设施错误转为该轮 error 而非抛出。"""
-    targets = cfg.get('run', {})
+    targets = cfg.run
     if name not in targets:
         return {'error': f'未定义的启动目标 {name!r}',
                 'available': sorted(targets)}
-    t = dict(targets[name])
+    t = targets[name]
 
     total = max(1, int(repeat))
-    if total > 1 and not t.get('reset_before'):
-        t['reset_before'] = True
+    if total > 1 and not t.reset_before:
+        t = replace(t, reset_before=True)
 
     with Board(cfg) as board:
         runner = Runner(board, name, t)
@@ -263,6 +265,6 @@ def run_collect(cfg, name, repeat=1, tail_lines=60):
                 'output_tail': '\n'.join(output.splitlines()[-tail_lines:]),
             })
     passed = sum(1 for r in rounds if r['pass'])
-    return {'board': cfg['name'], 'target': name, 'repeat': total,
+    return {'board': cfg.name, 'target': name, 'repeat': total,
             'rounds': rounds, 'passed': passed, 'failed': total - passed,
             'all_pass': passed == total}

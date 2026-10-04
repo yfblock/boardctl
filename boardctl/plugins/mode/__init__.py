@@ -26,19 +26,27 @@ import re
 import sys
 from abc import ABC, abstractmethod
 
+import msgspec
 
-def expand_cmd(name, t):
-    """展开目标 cmd 模板(执行命令是配置数据,不是代码):变量取本目标配置键,
-    模式级缺省(如 uboot 的 {addr}/{entry})由各模式在调用前 setdefault 注入;
-    未知变量报错指名,不静默留 {var} 字面量"""
+
+def expand_cmd(name, cmd, vals):
+    """展开目标 cmd 模板(执行命令是配置数据,不是代码):变量取 vals 映射
+    (由 target_vars 从目标翻出;模式级缺省如 uboot 的 {addr}/{entry} 由
+    各模式在调用前注入);未知变量报错指名,不静默留 {var} 字面量"""
 
     def _sub(m):
         k = m.group(1)
-        if k not in t or t[k] is None:
+        if k not in vals or vals[k] is None:
             sys.exit(f'run.{name} 的 cmd 用了 {{{k}}},但目标未配置该键')
-        return str(t[k])
+        return str(vals[k])
 
-    return re.sub(r'\{(\w+)\}', _sub, t['cmd'])
+    return re.sub(r'\{(\w+)\}', _sub, cmd)
+
+
+def target_vars(t):
+    """目标(RunTarget)→ cmd 模板变量映射:本目标键,剥 None。
+    缺省即缺省——None 字段不充当变量,与旧版剥 None 后的 dict 等价"""
+    return {k: v for k, v in msgspec.to_builtins(t).items() if v is not None}
 
 
 class RunMode(ABC):

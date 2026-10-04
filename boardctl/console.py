@@ -16,7 +16,7 @@ class Console:
 
     @classmethod
     def from_cfg(cls, cfg):
-        return cls(cfg['console']['prompt'])
+        return cls(cfg.console.prompt)
 
     def session(self, stream):
         """在板的常驻捕获流上开一个控制台会话(借用,不持有)"""

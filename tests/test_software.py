@@ -19,25 +19,27 @@ assert {'uboot', 'console', 'watch'} <= set(MODE), MODE
 #    console 模式无缺省,变量只取本目标键;未知变量报错指名)
 from boardctl.plugins.mode import expand_cmd  # noqa: E402
 from boardctl.plugins.mode.uboot import _expand  # noqa: E402
+from boardctl.schema import (BoardCfg, ConsoleCfg, MijiaCfg,  # noqa: E402
+                             PowerCfg, RunTarget, TftpCfg, UbootCfg)
 
-_mc = {'uboot': {'load_addr': '0x80080000'}}
-assert _expand(_mc, 't', {'cmd': 'go {addr}'}) == 'go 0x80080000'
-assert _expand(_mc, 't', {'cmd': 'source {entry}'}) == 'source 0x80080000'
-assert _expand(_mc, 't', {'cmd': 'go {entry}', 'entry': '0x80090000'}) == 'go 0x80090000'
-assert _expand(_mc, 't', {'cmd': 'booti {addr} - {fdt}', 'fdt': '0x83000000'}) \
+_mc = BoardCfg(name='m', uboot=UbootCfg(load_addr='0x80080000'))
+assert _expand(_mc, 't', RunTarget(cmd='go {addr}')) == 'go 0x80080000'
+assert _expand(_mc, 't', RunTarget(cmd='source {entry}')) == 'source 0x80080000'
+assert _expand(_mc, 't', RunTarget(cmd='go {entry}', entry='0x80090000')) == 'go 0x80090000'
+assert _expand(_mc, 't', RunTarget(cmd='booti {addr} - {fdt}', fdt='0x83000000')) \
     == 'booti 0x80080000 - 0x83000000'
-assert _expand(_mc, 't', {'cmd': 'bootm {addr} {initrd} {fdt}',
-                          'initrd': '0x82000000', 'fdt': '0x83000000'}) \
+assert _expand(_mc, 't', RunTarget(cmd='bootm {addr} {initrd} {fdt}',
+                                    initrd='0x82000000', fdt='0x83000000')) \
     == 'bootm 0x80080000 0x82000000 0x83000000'
-assert expand_cmd('t', {'cmd': 'echo {{not var}}'}) == 'echo {{not var}}'  # 非变量花括号原样
-assert expand_cmd('t', {'cmd': 'tester {slot}', 'slot': 3}) == 'tester 3'  # console:变量取目标键
+assert expand_cmd('t', 'echo {{not var}}', {}) == 'echo {{not var}}'  # 非变量花括号原样
+assert expand_cmd('t', 'tester {slot}', {'slot': 3}) == 'tester 3'  # console:变量取目标键
 try:
-    _expand(_mc, 't', {'cmd': 'booti {addr} - {fdt}'})
+    _expand(_mc, 't', RunTarget(cmd='booti {addr} - {fdt}'))
     raise AssertionError('cmd 缺变量应报错退出')
 except SystemExit as e:
     assert 'fdt' in str(e) and 'run.t' in str(e), e
 try:
-    expand_cmd('t', {'cmd': 'go {addr}'})   # console 无地址缺省,{addr} 即未知变量
+    expand_cmd('t', 'go {addr}', {})   # console 无地址缺省,{addr} 即未知变量
     raise AssertionError('console 模式 {addr} 应报错退出')
 except SystemExit as e:
     assert 'addr' in str(e) and 'run.t' in str(e), e
@@ -45,37 +47,38 @@ except SystemExit as e:
 # 3. 断言引擎 evaluate(expect 子串 / expect_re 正则 / fail_re 禁止命中)
 from boardctl.runner import evaluate  # noqa: E402
 
-ok, detail, checked = evaluate('hello PASS world', {'expect': ['PASS']})
+ok, detail, checked = evaluate('hello PASS world', RunTarget(expect=['PASS']))
 assert ok and checked and detail == ''
-ok, detail, _ = evaluate('abc', {'expect': ['PASS']})
+ok, detail, _ = evaluate('abc', RunTarget(expect=['PASS']))
 assert not ok and 'PASS' in detail
-ok, _, _ = evaluate('Kernel panic - not syncing', {'expect_re': [r'(?i)panic']})
+ok, _, _ = evaluate('Kernel panic - not syncing', RunTarget(expect_re=[r'(?i)panic']))
 assert ok
-ok, detail, _ = evaluate('Starting kernel', {'expect_re': [r'(?i)panic']})
+ok, detail, _ = evaluate('Starting kernel', RunTarget(expect_re=[r'(?i)panic']))
 assert not ok
-ok, detail, _ = evaluate('kernel panic here', {'fail_re': ['panic']})
+ok, detail, _ = evaluate('kernel panic here', RunTarget(fail_re=['panic']))
 assert not ok and 'fail_re' in detail
-ok, detail, checked = evaluate('anything', {})
+ok, detail, checked = evaluate('anything', RunTarget())
 assert ok and not checked
 
-# 4. 板卡配置加载 + 插件默认值合并(用包内置通用示例验证,不依赖个人环境)
+# 4. 板卡配置加载 + schema 默认值(用包内置通用示例验证,不依赖个人环境;
+#    配置以 BoardCfg 模型对象流通)
 boards = available_boards()
 assert 'example' in boards, boards
 cfg = load_board('example')
-assert 'sender' in cfg['loady'], cfg['loady']          # loady 插件自带 DEFAULTS
-assert cfg['tftp']['method'] == 'remote', cfg['tftp']
-assert cfg['power'].get('method') == 'command', cfg['power']
-assert cfg['run']['hello']['reset_before'] is True     # 示例即全自动开关机
+assert cfg.loady.sender == ''                          # schema 默认值(单一来源)
+assert cfg.tftp.method == 'remote', cfg.tftp
+assert cfg.power.method == 'command', cfg.power
+assert cfg.run['hello'].reset_before is True           # 示例即全自动开关机
 
 # 5. run 目标引用的文件真实存在(示例模板的占位路径除外;
 #    watch 等被动目标无 file——板子自己获取)
-for name, t in cfg['run'].items():
-    if not t.get('file'):
+for name, t in cfg.run.items():
+    if not t.file:
         continue
-    path = t['file']
+    path = t.file
     if not os.path.isabs(path):
         path = os.path.join(BASE_DIR, path)
-    assert os.path.isfile(path) or cfg['name'] == 'example', \
+    assert os.path.isfile(path) or cfg.name == 'example', \
         f'run.{name} 文件缺失: {path}'
 
 # 6. 流式执行引擎(常驻捕获:ConsoleStream 读线程 + 水位等待;伪串口注入,
@@ -128,46 +131,46 @@ def _stream(ser, t, **kw):
 
 
 out, ended = _stream(_FakeSer([b'BM-TEST-START\nBM-TEST-DONE\n'], powered=True),
-                     {'expect': ['BM-TEST-START', 'BM-TEST-DONE']})
+                     RunTarget(expect=['BM-TEST-START', 'BM-TEST-DONE']))
 assert ended == 'matched' and 'BM-TEST-DONE' in out, (ended, out)
 
-out, ended = _stream(_FakeSer([b'output line\r\nsoph# '], powered=True), {})
+out, ended = _stream(_FakeSer([b'output line\r\nsoph# '], powered=True), RunTarget())
 assert ended == 'prompt', ended
 
-out, ended = _stream(_FakeSer([], powered=True), {}, timeout=0.3)
+out, ended = _stream(_FakeSer([], powered=True), RunTarget(), timeout=0.3)
 assert ended == 'timeout', ended
 
-out, ended = _stream(_FakeSer([b'kernel booting...'], powered=True), {}, timeout=0.3)
+out, ended = _stream(_FakeSer([b'kernel booting...'], powered=True), RunTarget(), timeout=0.3)
 assert ended == 'timeout' and 'kernel booting' in out, (ended, out)
 
 # fail_re 流式即时命中(判负优先于判正);命中后先续收 fail_linger 秒再收工,
 # 让错误信息/栈输出完整(默认 2s,0 = 立即)
 out, ended = _stream(_FakeSer([b'boot ok\n', b'thread panicked at root.rs:401\n', b'never reached'],
                               powered=True),
-                     {'expect': ['TEST_RUNNER_DONE'], 'fail_re': ['(?i)panic'], 'fail_linger': 0.3})
+                     RunTarget(expect=['TEST_RUNNER_DONE'], fail_re=['(?i)panic'], fail_linger=0.3))
 assert ended == 'fail' and 'panicked' in out and 'never reached' in out, (ended, out)
 
 out, ended = _stream(_FakeSer([b'boot ok\n', b'thread panicked at root.rs:401\n', b'never reached'],
                               powered=True),
-                     {'expect': ['TEST_RUNNER_DONE'], 'fail_re': ['(?i)panic'], 'fail_linger': 0})
+                     RunTarget(expect=['TEST_RUNNER_DONE'], fail_re=['(?i)panic'], fail_linger=0))
 assert ended == 'fail' and 'never reached' not in out, (ended, out)
 
 out, ended = _stream(_FakeSer([b'DONE\npanic!\n'], powered=True),
-                     {'expect': ['DONE'], 'fail_re': ['panic'], 'fail_linger': 0})
+                     RunTarget(expect=['DONE'], fail_re=['panic'], fail_linger=0))
 assert ended == 'fail', ended
 
 # 被动观察(cmdline=None):零写入(连命令行回车都不发),输出照收、
 # 结束条件(断言命中/提示符/超时/fail_re)与主动模式完全一致
 ser = _FakeSer([b'U-Boot 2021.10\r\n', b'autoboot...\r\n', b'soph# '], powered=True)
-out, ended = _stream(ser, {}, cmd=None)
+out, ended = _stream(ser, RunTarget(), cmd=None)
 assert ended == 'prompt' and ser.written == b'' and 'U-Boot 2021.10' in out, (ended, out, ser.written)
 
 ser = _FakeSer([b'autoboot\r\n', b'TEST_RUNNER_DONE\r\n', b'never printed'], powered=True)
-out, ended = _stream(ser, {'expect': ['TEST_RUNNER_DONE']}, cmd=None)
+out, ended = _stream(ser, RunTarget(expect=['TEST_RUNNER_DONE']), cmd=None)
 assert ended == 'matched' and ser.written == b'', (ended, ser.written)
 
 ser = _FakeSer([], powered=True)
-out, ended = _stream(ser, {}, cmd=None, timeout=0.2)
+out, ended = _stream(ser, RunTarget(), cmd=None, timeout=0.2)
 assert ended == 'timeout' and ser.written == b'', (ended, ser.written)
 
 # 被动目标整链路(Runner.run):mode=watch 走静默上电分支
@@ -193,10 +196,10 @@ class _FakeBoard:
 
     @property
     def prompt(self):
-        return self.cfg['console']['prompt']
+        return self.cfg.console.prompt
 
     def session(self):
-        return _RealSession(self.stream, self.cfg['console']['prompt'])
+        return _RealSession(self.stream, self.cfg.console.prompt)
 
     # 显示面(与真实 Board 同款):tap 出口可换成缓冲
     def set_display(self, out):
@@ -226,9 +229,7 @@ class _FakeBoard:
         self.serial.power_on()
 
 
-_mincfg = {'name': 'fake', 'serial': {'url': '', 'timeout': 0.05},
-           'console': {'prompt': 'soph#'},
-           'uboot': {'load_addr': '0x80080000'}, 'power': {}}
+_mincfg = BoardCfg(name='fake', console=ConsoleCfg(prompt='soph#'))
 import io as _io2  # noqa: E402
 
 _wb = _FakeBoard(_mincfg)
@@ -236,9 +237,9 @@ _wb.stream.start()
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         ok, ended = _runner.Runner(_wb, 'watch-t',
-                                   {'mode': 'watch', 'reset_before': True,
-                                    'after': 'none', 'timeout': 1.0,
-                                    'expect': ['TEST_RUNNER_DONE']}).run()
+                                   RunTarget(mode='watch', reset_before=True,
+                                             after='none', timeout=1.0,
+                                             expect=['TEST_RUNNER_DONE'])).run()
 finally:
     _wb.stream.stop()
 # 被动整链路:expect 一命中即收工(matched,不等提示符——与主动模式一致)
@@ -253,9 +254,9 @@ _cb.stream.start()
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         ok, ended = _runner.Runner(_cb, 'sh-t',
-                                   {'mode': 'console', 'cmd': './selftest.sh',
-                                    'reset_before': True, 'after': 'none',
-                                    'timeout': 1.0, 'expect': ['ALL PASS']}).run()
+                                   RunTarget(mode='console', cmd='./selftest.sh',
+                                             reset_before=True, after='none',
+                                             timeout=1.0, expect=['ALL PASS'])).run()
 finally:
     _cb.stream.stop()
 assert ok and ended == 'matched' and _pcalls == ['WAIT'], (ok, ended, _pcalls)
@@ -269,8 +270,8 @@ _ob.stream.start()
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         ok, ended = _runner.Runner(_ob, 'off-t',
-                                   {'mode': 'watch', 'reset_before': True,
-                                    'after': 'off', 'timeout': 1.0}).run()
+                                   RunTarget(mode='watch', reset_before=True,
+                                             after='off', timeout=1.0)).run()
 finally:
     _ob.stream.stop()
 assert ended == 'prompt' and _pcalls == ['quiet', 'off'], (ended, _pcalls)
@@ -287,9 +288,9 @@ _db.stream.start()
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         ok, ended = _runner.Runner(_db, 'disp-t',
-                                   {'mode': 'watch', 'reset_before': True,
-                                    'after': 'off', 'timeout': 1.0,
-                                    'expect': ['TEST_RUNNER_DONE']}).run()
+                                   RunTarget(mode='watch', reset_before=True,
+                                             after='off', timeout=1.0,
+                                             expect=['TEST_RUNNER_DONE'])).run()
 finally:
     _db.stream.stop()
 assert ok and ended == 'matched', (ok, ended)
@@ -301,8 +302,8 @@ assert _pcalls == ['quiet', 'off'], _pcalls
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         _runner.Runner(_FakeBoard(_mincfg), 'sh-t',
-                       {'mode': 'console', 'cmd': 'x', 'file': 'f.bin',
-                        'after': 'none'}).run()
+                       RunTarget(mode='console', cmd='x', file='f.bin',
+                                 after='none')).run()
     raise AssertionError('console 带 file 应被拒绝')
 except SystemExit as e:
     assert 'file' in str(e.code) and 'console' in str(e.code), e.code
@@ -310,7 +311,7 @@ except SystemExit as e:
 # 未知模式给明确报错(注册表里有什么就报什么)
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
-        _runner.Runner(_FakeBoard(_mincfg), 't', {'mode': 'gdb', 'after': 'none'}).run()
+        _runner.Runner(_FakeBoard(_mincfg), 't', RunTarget(mode='gdb', after='none')).run()
     raise AssertionError('未知 mode 应被拒绝')
 except SystemExit as e:
     assert 'gdb' in str(e.code) and 'uboot' in str(e.code), e.code
@@ -319,7 +320,7 @@ except SystemExit as e:
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         _runner.Runner(_FakeBoard(_mincfg), 'watch-t',
-                       {'mode': 'watch', 'file': 'hello.bin', 'after': 'none'}).run()
+                       RunTarget(mode='watch', file='hello.bin', after='none')).run()
     raise AssertionError('watch 带 file 应被拒绝')
 except SystemExit as e:
     assert 'file' in str(e.code), e.code
@@ -328,7 +329,7 @@ except SystemExit as e:
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         _runner.Runner(_FakeBoard(_mincfg), 'go-t',
-                       {'cmd': 'go {addr}', 'after': 'none'}).run()
+                       RunTarget(cmd='go {addr}', after='none')).run()
     raise AssertionError('主动模式缺 file 应报错')
 except SystemExit as e:
     assert 'file' in str(e.code), e.code
@@ -416,14 +417,14 @@ with tempfile.TemporaryDirectory() as td:
     (root / 'hello.bin').write_bytes(b'BM-TEST')
     outside = Path(td) / 'elsewhere.bin'
     outside.write_bytes(b'OTHER')
-    cfg_x = {'tftp': {'method': 'external', 'local_dir': str(root)}}
+    cfg_x = BoardCfg(name='x', tftp=TftpCfg(method='external', local_dir=str(root)))
     _tftp.TftpTransport(cfg_x)._stage_file(str(root / 'hello.bin'))     # 原地:不抛 SameFileError
     assert (root / 'hello.bin').read_bytes() == b'BM-TEST'
     _tftp.TftpTransport(cfg_x)._stage_file(str(outside))                # 异地:落盘进 tftp 根
     assert (root / 'elsewhere.bin').read_bytes() == b'OTHER'
 
     # 8.3 local 已移除(不再自建 TFTP 服务器):残留配置报迁移指引
-    cfg_l = {'tftp': {'method': 'local', 'local_dir': str(root)}}
+    cfg_l = BoardCfg(name='l', tftp=TftpCfg(method='local', local_dir=str(root)))
     try:
         _tftp.TftpTransport(cfg_l)._stage_file(str(root / 'hello.bin'))
         raise AssertionError('method=local 应 sys.exit 退出(已移除)')
@@ -438,9 +439,9 @@ from boardctl import power as _power_mod  # noqa: E402
 from boardctl.plugins import POWER as _POWER_REG  # noqa: E402
 from boardctl.plugins.power import mijia as _mijia  # noqa: E402
 
-assert _mijia.MijiaPower({'power': {}})._prop() == 'on'                # 缺省:多数插座
-assert _mijia.MijiaPower({'power': {'mijia': {}}})._prop() == 'on'
-assert _mijia.MijiaPower({'power': {'mijia': {'prop': 'power'}}})._prop() == 'power'
+assert _mijia.MijiaPower(BoardCfg(name='m'))._prop() == 'on'                   # 缺省:多数插座
+assert _mijia.MijiaPower(BoardCfg(name='m', power=PowerCfg()))._prop() == 'on'
+assert _mijia.MijiaPower(BoardCfg(name='m', power=PowerCfg(mijia=MijiaCfg(prop='power'))))._prop() == 'power'
 
 
 class _FakePowerPlugin:
@@ -465,8 +466,7 @@ class _FakePowerPlugin:
 
 _POWER_REG['fake'] = _FakePowerPlugin
 try:
-    _fcfg = {'name': 'fake', 'power': {'method': 'fake'},
-             'serial': {}, 'uboot': {}}
+    _fcfg = BoardCfg(name='fake', power=PowerCfg(method='fake'))
     p = _power_mod.Power(_fcfg)
     p.on()
     p.off()   # 门面默认 check=True:失败才退出;成功路径不碰进程
@@ -486,9 +486,9 @@ from boardctl import cli as _cli  # noqa: E402
 
 _runcalls = []
 with _mock.patch.object(_cli, 'do_run',
-                        lambda cfg, name, repeat=1: _runcalls.append((cfg['name'], name, repeat))), \
+                        lambda cfg, name, repeat=1: _runcalls.append((cfg.name, name, repeat))), \
         _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/example.toml'}), \
-        _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}):
+        _mock.patch.object(_cli, 'load_board', lambda n: BoardCfg(name=n)):
     # 全局 -b 前置于子命令 + 位置参数 + 短旗标 -r(cyclopts 按 int 注解交付)
     _cli.app.meta(['-b', 'example', 'run', 'hello', '-r', '3'])
     assert _runcalls == [('example', 'hello', 3)], _runcalls
@@ -508,7 +508,7 @@ with _mock.patch.object(_cli, 'do_run',
 # 非法 repeat:cyclopts 解析层拦截,报错文案带原值(退出码属框架约定,
 # 只断非零不断具体码——0.10.0 教训:别断言 CLI 框架的退出码)
 with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/e.toml'}), \
-        _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}):
+        _mock.patch.object(_cli, 'load_board', lambda n: BoardCfg(name=n)):
     with contextlib.redirect_stdout(_io2.StringIO()) as _so, \
             contextlib.redirect_stderr(_io2.StringIO()) as _se:
         try:
@@ -541,24 +541,24 @@ class _FakeCliPower:
         self.cfg = cfg
 
     def on(self):
-        _pcalls.append((self.cfg['name'], 'on'))
+        _pcalls.append((self.cfg.name, 'on'))
 
     def off(self):
-        _pcalls.append((self.cfg['name'], 'off'))
+        _pcalls.append((self.cfg.name, 'off'))
 
     def status(self):
-        _pcalls.append((self.cfg['name'], 'status'))
+        _pcalls.append((self.cfg.name, 'status'))
         return False
 
 
-with _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'power': {}}), \
+with _mock.patch.object(_cli, 'load_board', lambda n: BoardCfg(name=n)), \
         _mock.patch.object(_cli.power, 'Power', _FakeCliPower):
     with contextlib.redirect_stdout(_io2.StringIO()):
-        _cli.power_ctl('off', cfg={'name': 'ex', 'power': {}})     # 直调函数
+        _cli.power_ctl('off', cfg=BoardCfg(name='ex'))           # 直调函数
         _cli.app.meta(['-b', 'ex', 'power', 'off'])                # 经 cyclopts
     assert _pcalls == [('ex', 'off'), ('ex', 'off')], _pcalls
     with contextlib.redirect_stdout(_io2.StringIO()) as _so:
-        _cli.power_ctl('status', cfg={'name': 'ex', 'power': {}})  # status 打印开/关
+        _cli.power_ctl('status', cfg=BoardCfg(name='ex'))        # status 打印开/关
     assert _so.getvalue() == '关\n', _so.getvalue()
 
 # 非法 power state:Literal 在解析层拒绝(方法内手工校验仍在,兜程序化调用)
@@ -574,7 +574,7 @@ with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/e.toml
 
 # ls 分发
 with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/example.toml'}), \
-        _mock.patch.object(_cli, 'load_board', lambda n: {'name': n, 'description': '示例'}):
+        _mock.patch.object(_cli, 'load_board', lambda n: BoardCfg(name=n, description='示例')):
     with contextlib.redirect_stdout(_io2.StringIO()) as _so:
         _cli.app.meta(['ls'])
 assert 'example' in _so.getvalue(), _so.getvalue()
@@ -608,20 +608,20 @@ with tempfile.TemporaryDirectory() as _td:
         assert _boards['example'] == str(Path(_td) / 'example.toml'), _boards  # 先到先得
         assert 'ignored.txt' not in _boards
         _c = load_board('x')
-        assert _c['serial']['url'] == 'socket://h:1'
-        assert _c['console']['prompt'] == '=>'       # schema 默认值
-        assert 'prompt' not in _c['uboot']           # 提示符只归 [console]
+        assert _c.serial.url == 'socket://h:1'
+        assert _c.console.prompt == '=>'       # schema 默认值
+        assert not hasattr(_c.uboot, 'prompt')  # 提示符只归 [console](UbootCfg 无此字段)
         _c = load_board('y')
-        assert _c['console']['prompt'] == 'ub# '     # 显式 [console] 即所配即所得
-        assert _c['uboot']['load_addr'] == '0x1'
+        assert _c.console.prompt == 'ub# '     # 显式 [console] 即所配即所得
+        assert _c.uboot.load_addr == '0x1'
         _c = load_board('z')
-        assert _c['console']['prompt'] == 'sh$ '
+        assert _c.console.prompt == 'sh$ '
     finally:
         os.environ.pop('BOARDCTL_BOARDS', None)
 
 # 12. 配置建模(msgspec):加载即校验——拼错的键/旧式键/非法枚举/类型/约束
-#     当场报错且带字段路径;缺省即缺省(None 剥除,消费端默认逻辑不变);
-#     插件段用户值真正到达;check 子命令按板汇总、退出码可用
+#     当场报错且带字段路径;缺省即缺省(字段值为 None,消费端判 None 取
+#     自己的默认);插件段同样建模校验;check 子命令按板汇总、退出码可用
 with tempfile.TemporaryDirectory() as _td:
     os.environ['BOARDCTL_BOARDS'] = _td
     try:
@@ -630,13 +630,13 @@ with tempfile.TemporaryDirectory() as _td:
 
         _toml('[run.h]\nexpect = ["X"]\ntimeout = 8\n')
         _c = load_board('m')
-        assert _c['run']['h']['expect'] == ['X'], _c['run']['h']
-        assert _c['run']['h']['timeout'] == 8.0                         # int→float 强转
-        assert 'after' not in _c['run']['h'], _c['run']['h']            # 缺省即缺省
-        assert 'cmd' not in _c['run']['h']
+        assert _c.run['h'].expect == ['X'], _c.run['h']
+        assert _c.run['h'].timeout == 8.0                         # int→float 强转
+        assert _c.run['h'].after is None, _c.run['h']             # 缺省即缺省(字段为 None)
+        assert _c.run['h'].cmd is None
 
         _toml('[loady]\nsender = "/opt/sb"\n')
-        assert load_board('m')['loady'] == {'sender': '/opt/sb'}        # 用户值不再被 DEFAULTS 埋没
+        assert load_board('m').loady.sender == '/opt/sb'          # 用户值直达
 
         for _body, _why in [
             ('[run.h]\nexpcet = ["X"]\n', '拼错的键'),
