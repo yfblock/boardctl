@@ -1,7 +1,10 @@
-"""watch 启动模式:被动观察——板子自己完成传输与执行(bootcmd/板上自动
-脚本),boardctl 全程零写入:不发命令,连冷启动等提示符的 Ctrl-C 都不能发
-(会打断板上流程)。捕获流常驻(连接在 Board 构造时已建立),静默上电前
-清噪——启动输出从第一个字节起全数落进捕获日志。"""
+"""watch boot mode: passive watching — the board does its own transport and
+execution (bootcmd/on-board automatic scripts), boardctl writes nothing the
+whole way: no commands sent, not even the Ctrl-C of a cold boot's
+prompt-wait (it would interrupt the board's flow). The capture stream is
+resident (the connection was established when Board was constructed); noise
+is cleared before the quiet power-on — boot output lands in the capture
+log in full from the very first byte."""
 import sys
 
 from . import RunMode
@@ -17,12 +20,12 @@ class WatchMode(RunMode):
         board, name, t = runner.board, runner.name, runner.t   # this runner's object data
         for k in ('file', 'cmd'):
             if getattr(t, k):
-                sys.exit(f'run.{name}(mode=watch)为被动模式,不认 {k}'
-                         '(板子自行完成传输与执行)')
+                sys.exit(f'run.{name} (mode=watch) is passive and rejects {k} '
+                         '(the board does its own transport and execution)')
         if t.reset_before:
-            print(f'[{name}] 冷启动(静默:断电->上电,不写串口)', flush=True)
+            print(f'[{name}] cold boot (quiet: power-off -> power-on, no serial writes)', flush=True)
             board.quiet_boot()   # noise clearing + power-on inside: the capture log starts at power-on
-        print(f'[{name}] 被动观察(mode=watch:不发送任何命令)', flush=True)
+        print(f'[{name}] passive watching (mode=watch: no commands sent)', flush=True)
         return board.stream, None, None
 
 

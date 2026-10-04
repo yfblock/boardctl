@@ -1,14 +1,19 @@
-"""配置建模:msgspec.Struct 声明板卡 toml 的形状,加载即校验。
+"""Config modeling: msgspec.Struct declares the shape of a board toml,
+validated on load.
 
-全部段(核心与插件)都在此建模,默认值只在此处声明一份;`boardctl check`
-即用此形状校验配置。加载后配置即以 BoardCfg 模型对象流通(不再是 dict)。
+All sections (core and plugins) are modeled here, defaults declared exactly
+once; `boardctl check` validates configs against this shape. After loading,
+the config circulates as a BoardCfg model object (no longer a dict).
 
-- 严格与宽容分界:各段 forbid_unknown_fields,拼错的键(如 expcet)当场
-  报错;顶层宽容——未来的段不设阻(新插件加段时在此加字段,暂不定形的
-  段可先声明为 dict)。
-- 缺省即缺省:可缺省字段建模为 None,消费端判 None 取自己的默认值
-  (如 runner 的 after 缺省逻辑带条件,数据层不替它决定);有明确缺省值
-  的字段(如 power.method)在此声明。
+- Strict vs lenient boundary: each section forbids unknown fields, so a
+  misspelled key (e.g. expcet) errors on the spot; the top level stays
+  lenient — future sections face no barrier (when a new plugin adds a
+  section, add the field here; a section not yet settled can first be
+  declared as dict).
+- Absent means absent: optional fields are modeled as None, consumers
+  None-check and take their own defaults (e.g. runner's after-default logic
+  is conditional; the data layer doesn't decide for it); fields with a
+  definite default (e.g. power.method) are declared here.
 """
 from typing import Annotated, Literal
 
@@ -32,7 +37,7 @@ class UbootCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
 
 
 class MijiaCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
-    """[power.mijia] 米家插座参数(method = "mijia" 时生效)"""
+    """[power.mijia] Mijia socket parameters (effective when method = "mijia")"""
 
     did: str | None = None       # device id (either this or dev_name)
     dev_name: str | None = None
@@ -40,7 +45,7 @@ class MijiaCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
 
 
 class PowerCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
-    """[power] 电源:两种方式的键共存一份(method 选插件,未用到的键无害)"""
+    """[power] power: keys of both approaches coexist in one place (method picks the plugin; unused keys are harmless)"""
 
     method: str = 'command'        # command (default) | mijia (needs pip install 'boardctl[mijia]')
     reset_delay: float = 3.0       # seconds between power-off and power-on (cadence lives in the board domain)
@@ -51,7 +56,7 @@ class PowerCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
 
 
 class TftpCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
-    """[tftp] tftp 传输:文件就位方式由 method 显式声明"""
+    """[tftp] tftp transport: how files get staged is declared explicitly via method"""
 
     method: str = 'remote'         # remote: scp to a remote tftp server
                                    # external: a resident tftpd already serves this host; just stage the file, no privileges
@@ -61,7 +66,7 @@ class TftpCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
 
 
 class LoadyCfg(msgspec.Struct, forbid_unknown_fields=True, frozen=True):
-    """[loady] loady(Ymodem)传输"""
+    """[loady] loady (Ymodem) transport"""
 
     sender: str = ''               # Ymodem sender; empty = autodetect (Arch: lrzsz-sb, Debian: sb)
 
@@ -70,11 +75,12 @@ _PosFloat = Annotated[float, msgspec.Meta(ge=0)]
 
 
 class RunTarget(msgspec.Struct, forbid_unknown_fields=True):
-    """[run.<名>] 一个启动目标。
+    """[run.<name>] one boot target.
 
-    method/mode 为宽松 str,不限枚举——传输与启动模式都是插件,
-    名字集合随插件注册表开放(注册表在运行期给"未知名字"报错,
-    报错文案比 schema 校验更友好)。
+    method/mode are loose strs, not enum-limited — transport and boot mode
+    are both plugins, their name sets stay open with the plugin registry
+    (the registry errors on "unknown name" at runtime, with friendlier
+    messages than schema validation).
     """
 
     # what it is: description, file, transport and boot mode
@@ -104,7 +110,7 @@ class RunTarget(msgspec.Struct, forbid_unknown_fields=True):
 
 
 class BoardCfg(msgspec.Struct):
-    """一块板的全部配置;name 由加载器注入(非 toml 内容)。"""
+    """A board's full config; name is injected by the loader (not toml content)."""
 
     name: str
     description: str = ''

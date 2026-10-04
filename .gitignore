@@ -6,16 +6,16 @@ __pycache__/
 dist/
 build/
 
-# 运行时数据目录(本地 TFTP 根目录,内容按需自建)
+# Runtime data dir (local TFTP root; contents built as needed)
 tftpboot/
 
-# 工具缓存
+# Tool caches
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
-# 编辑器
+# Editors
 .vscode/
 .idea/
 
-# (真机验收资产已移出仓库,存放于维护者本地)
+# (Hardware-acceptance assets moved out of the repo, kept locally by the maintainer)

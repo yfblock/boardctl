@@ -1,9 +1,10 @@
-"""板卡配置:目录发现 + 加载。
+"""Board configs: directory discovery + loading.
 
-- 发现:boards_dirs()/available_boards() 按 $BOARDCTL_BOARDS →
-  ~/.config/boardctl → 包内置示例的优先级找板卡。
-- 加载(load_board):toml 解析 → 注入板名 → msgspec 建模校验
-  (形状与默认值见 schema.py)→ 直接以 BoardCfg 模型对象返回。
+- Discovery: boards_dirs()/available_boards() find boards by priority
+  $BOARDCTL_BOARDS → ~/.config/boardctl → the bundled example.
+- Loading (load_board): toml parse → inject the board name → msgspec
+  modeling validation (shape and defaults in schema.py) → returned directly
+  as a BoardCfg model object.
 """
 import os
 import sys
@@ -22,9 +23,10 @@ BUNDLED_BOARDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'b
 
 
 def boards_dirs():
-    """板卡配置目录搜索顺序(去重,仅保留存在的):
-    $BOARDCTL_BOARDS → ~/.config/boardctl(用户配置,唯一推荐位置)→ 包内置示例
-    本地/项目文件夹不参与解析。
+    """Board config directory search order (deduplicated, existing only):
+    $BOARDCTL_BOARDS → ~/.config/boardctl (user configs, the only
+    recommended location) → the bundled example. Local/project folders
+    don't take part in resolution.
     """
     candidates = [
         os.environ.get('BOARDCTL_BOARDS'),
@@ -42,7 +44,7 @@ def boards_dirs():
 
 
 def available_boards():
-    """全部可用板卡名(按目录优先级去重,先出现的优先)"""
+    """All available board names (deduplicated by directory priority, first occurrence wins)"""
     names = {}
     for d in boards_dirs():
         for p in sorted(Path(d).glob('*.toml')):
@@ -53,11 +55,11 @@ def available_boards():
 def load_board(name):
     boards = available_boards()
     if name not in boards:
-        sys.exit(f"未知开发板 {name!r},可用: {' '.join(sorted(boards)) or '(配置目录里没有任何板卡)'}")
+        sys.exit(f"unknown board {name!r}, available: {' '.join(sorted(boards)) or '(no boards in the config dirs)'}")
     with open(boards[name], 'rb') as f:
         data = tomllib.load(f)
     data['name'] = name
     try:
         return msgspec.convert(data, schema.BoardCfg, strict=False)
     except msgspec.ValidationError as e:
-        sys.exit(f'板卡 {name} 配置无效({boards[name]}):\n{e}')
+        sys.exit(f'board {name} has an invalid config ({boards[name]}):\n{e}')

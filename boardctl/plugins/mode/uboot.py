@@ -1,6 +1,8 @@
-"""uboot 启动模式([run.*].mode 的缺省值):冷启动 -> 传输插件上文件 -> cmd 执行。
-U-Boot 特有知识的集中地:加载地址缺省链(addr <- uboot.load_addr,
-entry <- addr)、{addr}/{entry} 模板变量、传输后等提示符再执行。"""
+"""uboot boot mode (the default of [run.*].mode): cold boot -> transport
+plugin stages the file -> cmd executes. The concentration point of
+U-Boot-specific knowledge: the load-address default chain (addr <-
+uboot.load_addr, entry <- addr), the {addr}/{entry} template variables,
+waiting for the prompt after transport before executing."""
 import os
 import sys
 
@@ -9,8 +11,8 @@ from . import RunMode, expand_cmd, target_vars
 
 
 def _expand(cfg, name, t):
-    """uboot 命令展开:{addr}/{entry} 缺省链——addr <- uboot.load_addr,
-    entry <- addr(目标键优先)"""
+    """uboot command expansion: the {addr}/{entry} default chain — addr <-
+    uboot.load_addr, entry <- addr (target keys take precedence)"""
     vals = target_vars(t)
     vals.setdefault('addr', cfg.uboot.load_addr)
     vals.setdefault('entry', vals['addr'])
@@ -28,37 +30,37 @@ class UbootMode(RunMode):
         cmdline = _expand(self.cfg, name, t) if t.cmd else None
 
         if t.reset_before:
-            print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
+            print(f'[{name}] cold boot (power-off -> power-on -> wait for prompt)', flush=True)
             board.cold_boot()
 
         if t.file is None:
-            sys.exit(f'run.{name}(mode=uboot)需要配置 file;'
-                     '不传输直接执行命令用 mode = "console",被动观察用 mode = "watch"')
+            sys.exit(f'run.{name} (mode=uboot) needs file configured; '
+                     'to execute a command without transport use mode = "console", for passive watching use mode = "watch"')
         path = t.file
         if not os.path.isabs(path):
             path = os.path.join(BASE_DIR, path)
         if not os.path.isfile(path):
-            sys.exit(f'文件不存在: {path}(先构建?)')
+            sys.exit(f'file not found: {path} (built it first?)')
         addr = t.addr or self.cfg.uboot.load_addr   # load address (entry {entry} comes from the cmd template)
         method = t.method or 'tftp'
         from .. import TRANSPORT   # function-local import: the registry is filled by the plugins package __init__
         transport = TRANSPORT.get(method)
         if transport is None:
-            sys.exit(f'未知传输方式 {method!r},可用: {" ".join(sorted(TRANSPORT)) or "(无)"}')
+            sys.exit(f'unknown transport method {method!r}, available: {" ".join(sorted(TRANSPORT)) or "(none)"}')
 
-        print(f'[{name}] 传输 {t.file} ({method}) -> {addr}', flush=True)
+        print(f'[{name}] transferring {t.file} ({method}) -> {addr}', flush=True)
         if not transport(self.cfg).send(board.stream, path, addr):
             sys.exit(1)
 
         if cmdline is None:
-            print(f'[{name}] 已加载到 {addr}(未配置 cmd,不执行)')
+            print(f'[{name}] loaded to {addr} (no cmd configured, not executing)')
             return None, None, 'loaded'
 
-        print(f'[{name}] 执行: {cmdline}', flush=True)
+        print(f'[{name}] executing: {cmdline}', flush=True)
         s = board.session()   # the same capture stream: transport and execution share it
         ok, _ = s.wait_prompt()
         if not ok:
-            sys.exit('等待 U-Boot 提示符超时')
+            sys.exit('timed out waiting for the U-Boot prompt')
         return s.stream, cmdline, None
 
 

@@ -1,12 +1,18 @@
-"""run 编排域:Runner 单轮全流程(上电 -> 传输 -> 执行 -> 断言 -> 收尾);
-一块板(Board)对应多个 runner——每个 [run.<名>] 目标一个,repeat > 1 时
-同一 runner 复跑多轮并汇总。输出显示挂在捕获事件上(stream tap,由板域
-上电前挂/断电前摘):CLI 上电起即捕即显;程序化调用用 run_collect(把
-显示出口换成本轮缓冲,设备字节不落调用方进程的 stdout,返回结构化结果)。
-目标"怎么弄起来"由启动模式插件族(plugins/mode,[run.*].mode 选择)解释;
-流式引擎(_stream_run)消费板的常驻捕获流(水位 + 事件唤醒,见 stream.py)
-与断言引擎(evaluate)为共享代码——判定与收尾语义一致由共享代码保证,
-不靠各插件自觉。"""
+"""run orchestration domain: Runner drives the single-round full flow
+(power-on -> transport -> execute -> assert -> after-handling); one Board
+maps to many runners — one per [run.<name>] target; with repeat > 1 the same
+runner re-runs multiple rounds and summarizes. Output display hangs on
+capture events (the stream tap, attached before power-on / detached before
+power-off by the board domain): on the CLI everything is shown as captured
+from power-on; programmatic callers use run_collect (which swaps the display
+sink for a per-round buffer, so device bytes never reach the caller's
+stdout, and returns a structured result). How a target "gets brought up" is
+interpreted by the boot-mode plugin family (plugins/mode, selected via
+[run.*].mode); the streaming engine (_stream_run, which consumes the board's
+resident capture stream — watermarks + event wakeup, see stream.py) and the
+assertion engine (evaluate) are shared code — consistent verdict and
+after-handling semantics are guaranteed by that sharing, not by each
+plugin's diligence."""
 import contextlib
 import io
 import os
@@ -24,8 +30,9 @@ QUIT_BYTE = 0x1C   # quit key in interactive mode
 
 
 def _positives_satisfied(t, buf):
-    """正向断言(expect 子串 + expect_re 正则)是否已全部命中;
-    未配置正向断言时返回 False(不以 matched 结束,等提示符/超时)"""
+    """Whether all positive assertions (expect substrings + expect_re regexes)
+    have hit; returns False when no positive assertions are configured
+    (doesn't end as matched — waits for prompt/timeout)"""
     subs = t.expect
     pats = t.expect_re
     if not subs and not pats:
@@ -40,8 +47,10 @@ def _positives_satisfied(t, buf):
 
 
 def _fail_hit(t, buf):
-    """负向断言 fail_re 是否命中(流式即时判负:一命中就收工,
-    不等 timeout——panic 类故障立刻断电止损);明细由 evaluate 统一给出"""
+    """Whether a negative assertion fail_re hit (streaming instant negative
+    verdict: wrap up as soon as one hits, don't wait out the timeout —
+    panic-class faults cut power immediately to limit damage); details come
+    uniformly from evaluate"""
     for p in t.fail_re:
         if re.search(p, buf):
             return True
@@ -49,14 +58,17 @@ def _fail_hit(t, buf):
 
 
 def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
-    """流式执行一条命令,返回 (累计输出, 结束原因)。
+    """Stream-execute one command, returning (accumulated output, end reason).
 
-    结束原因取最先者:prompt(提示符重现)/ fail(fail_re 命中后不立即
-    收工,续收 fail_linger 秒让错误输出完整;同批正负双命中判负优先)/
-    matched(正向断言全命中)/ timeout;交互模式另有 user(Ctrl-\\),
-    stdin 原样转发到设备、不限时。cmdline=None 为被动收流,零写入
-    (mode=watch,写入会打断板上自动流程)。显示不在此处——stream tap
-    即捕即显;观察窗口 = 入口水位,断言不回看。"""
+    End reason, first one wins: prompt (prompt reappears) / fail (fail_re hit
+    but no immediate wrap-up — keep capturing fail_linger seconds so error
+    output completes; when positives and negatives hit in the same batch the
+    negative wins) / matched (all positive assertions hit) / timeout;
+    interactive mode also has user (Ctrl-\\): stdin is forwarded to the device
+    verbatim, no time limit. cmdline=None is passive capture with zero writes
+    (mode=watch — writing would interrupt the board's automatic flow).
+    Display doesn't live here — the stream tap shows as captured; the
+    observation window = the entry watermark, assertions don't look back."""
     since = ch.mark()
     if cmdline is not None:
         ch.write(cmdline + '\r')
@@ -77,7 +89,7 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
         old_attrs = termios.tcgetattr(sys.stdin.fileno())
         tty.setraw(sys.stdin.fileno())
         raw = True
-        print('\r\n[boardctl] 交互模式:输出实时转发,Ctrl-\\ 退出\r\n',
+        print('\r\n[boardctl] interactive mode: output forwarded live, Ctrl-\\ to quit\r\n',
               end='', flush=True)
     try:
         while True:
@@ -114,32 +126,35 @@ def _stream_run(ch, cmdline, prompt, t, interactive, timeout):
 
 
 def evaluate(out, t):
-    """断言输出。规则:
-    expect     子串列表,必须全部出现
-    expect_re  正则列表,必须全部 re.search 命中
-    fail_re    正则列表,必须全部不命中(如 panic/FAIL 自动判负)
-    返回 (是否PASS, 问题摘要, 是否配置了断言)
+    """Assert on output. Rules:
+    expect     list of substrings, all must appear
+    expect_re  list of regexes, all must re.search-hit
+    fail_re    list of regexes, none may hit (e.g. panic/FAIL auto-fail)
+    Returns (PASS bool, problem summary, whether any assertion was configured)
     """
     problems = []
     for e in t.expect:
         if e not in out:
-            problems.append(f'expect 未出现: {e!r}')
+            problems.append(f'expect not seen: {e!r}')
     for p in t.expect_re:
         if not re.search(p, out):
-            problems.append(f'expect_re 未匹配: {p!r}')
+            problems.append(f'expect_re not matched: {p!r}')
     for p in t.fail_re:
         if re.search(p, out):
-            problems.append(f'fail_re 命中: {p!r}')
+            problems.append(f'fail_re hit: {p!r}')
     checked = bool(t.expect or t.expect_re or t.fail_re)
     return (not problems), '; '.join(problems), checked
 
 
 class Runner:
-    """单轮 run 编排:冷启动 -> 传输(插件) -> 执行(cmd 模板,流式) -> 断言 -> 收尾。
+    """Single-round run orchestration: cold boot -> transport (plugin) ->
+    execute (cmd template, streamed) -> assert -> after-handling.
 
-    一块板(Board)对应多个 runner——每个 [run.<名>] 目标一个;runner 持有
-    板:开机/静默上电/会话经板域,断电收尾经板上的电源域对象(board.power)。
-    依赖方向:runner(编排)-> board(板域)-> {power, session/serial}。"""
+    One Board maps to many runners — one per [run.<name>] target; the runner
+    holds the board: power-on/quiet power-on/session go through the board
+    domain, power-off finish goes through the power-domain object on the
+    board (board.power). Dependency direction: runner (orchestration) ->
+    board (board domain) -> {power, session/serial}."""
 
     def __init__(self, board, name, t):
         self.board = board
@@ -155,28 +170,31 @@ class Runner:
         after = t.after or 'none'
         try:
             if after == 'off':
-                print(f'[{name}] 断电收尾(after=off)', flush=True)
+                print(f'[{name}] powering off (after=off)', flush=True)
                 self.board.power_off()
-                print(f'[{name}] 已断电', flush=True)
+                print(f'[{name}] powered off', flush=True)
             elif after == 'reset':
-                print(f'[{name}] 输出结束,重启回提示符(after=reset)', flush=True)
+                print(f'[{name}] output done, rebooting to prompt (after=reset)', flush=True)
                 self.board.reboot()
         except Exception as e:   # a finish failure must not mask the original execute-phase exception
-            print(f'[{name}] 收尾(after={after})失败: {e}', file=sys.stderr, flush=True)
+            print(f'[{name}] after-handling (after={after}) failed: {e}', file=sys.stderr, flush=True)
 
     def run(self):
-        """执行单轮:启动模式插件 launch(上电/传输/命令) -> 流式收输出 ->
-        断言 -> 收尾。模式(uboot/console/watch/…)解释目标怎么弄起来,
-        流式/断言/收尾全模式共用。收尾(after)放 finally:传输失败、插件
-        sys.exit、异常退出同样执行(after=none 语义不变:保持现状);
-        返回 (expect 判定 bool, 结束原因);未配置断言时 bool 恒 True;
-        基础设施错误直接退出。"""
+        """Run one round: boot-mode plugin launch (power-on/transport/command)
+        -> stream output in -> assert -> after-handling. The mode
+        (uboot/console/watch/…) interprets how the target gets brought up;
+        streaming/assertions/after-handling are shared across all modes.
+        After-handling (after) sits in finally: transport failures, plugin
+        sys.exit and exceptional exits run it too (after=none semantics
+        unchanged: keep state); returns (expect-verdict bool, end reason);
+        with no assertions configured the bool is always True; infrastructure
+        errors exit directly."""
         cfg, name, t = self.cfg, self.name, self.t
         try:
             mode_name = t.mode or 'uboot'
             mode = MODE.get(mode_name)
             if mode is None:
-                sys.exit(f'未知启动模式 {mode_name!r},可用: {" ".join(sorted(MODE)) or "(无)"}')
+                sys.exit(f'unknown boot mode {mode_name!r}, available: {" ".join(sorted(MODE)) or "(none)"}')
             timeout = float(15 if t.timeout is None else t.timeout)
             interactive = bool(t.interactive)
             ch, cmdline, done = mode(cfg).launch(self)   # the specific object = this target's runner
@@ -184,11 +202,11 @@ class Runner:
                 return True, done
             out, ended = _stream_run(ch, cmdline, self.board.prompt,
                                      t, interactive, timeout)
-            print(f'[{name}] 执行结束({ended})', flush=True)
+            print(f'[{name}] execution ended ({ended})', flush=True)
 
             ok, detail, checked = evaluate(out, t)
             if checked:
-                print(f'[{name}] 结果: {"PASS" if ok else "FAIL"}' + (f'({detail})' if detail else ''),
+                print(f'[{name}] result: {"PASS" if ok else "FAIL"}' + (f'({detail})' if detail else ''),
                       flush=True)
             return (ok if checked else True), ended
         finally:
@@ -196,24 +214,24 @@ class Runner:
 
 
 def do_run(cfg, name, repeat=1):
-    """按板卡配置里的 [run.<名字>] 一键启动;repeat>1 时循环并汇总"""
+    """One-shot launch per [run.<name>] in the board config; with repeat>1 loop and summarize"""
     targets = cfg.run
     if not name:
         if not targets:
-            sys.exit(f'{cfg.name} 配置里没有 [run.*] 启动目标')
-        print(f'{cfg.name} 可启动目标(boardctl run <名字>):')
+            sys.exit(f'{cfg.name} config has no [run.*] boot targets')
+        print(f'{cfg.name} bootable targets (boardctl run <name>):')
         for k, t in targets.items():
             desc = t.desc or ''
-            what = t.cmd or t.mode or '(只加载)'
+            what = t.cmd or t.mode or '(load only)'
             print(f'  {k:12} {what:26} {t.file or ""}  {desc}')
         return
     if name not in targets:
-        sys.exit(f'未定义的启动目标 {name!r},可用: {" ".join(targets) or "(无)"}')
+        sys.exit(f'undefined boot target {name!r}, available: {" ".join(targets) or "(none)"}')
     t = targets[name]
 
     total = max(1, int(repeat))
     if total > 1 and not t.reset_before:
-        print(f'[{name}] repeat>1,自动启用 reset_before(每轮冷启动)', flush=True)
+        print(f'[{name}] repeat>1, enabling reset_before automatically (cold boot each round)', flush=True)
         t = replace(t, reset_before=True)   # copy-and-inject; the original config stays untouched
 
     with Board(cfg) as board:   # the board owns the single serial channel; closed on exit
@@ -221,23 +239,26 @@ def do_run(cfg, name, repeat=1):
         results = []
         for i in range(1, total + 1):
             if total > 1:
-                print(f'===== 第 {i}/{total} 轮 =====', flush=True)
+                print(f'===== round {i}/{total} =====', flush=True)
             results.append(runner.run()[0])
 
     if total > 1:
         p = sum(1 for r in results if r)
-        print(f'[{name}] 汇总: {p}/{total} 轮 PASS' + (' ✅' if p == total else ' ❌'))
+        print(f'[{name}] summary: {p}/{total} rounds PASS' + (' ✅' if p == total else ' ❌'))
     sys.exit(0 if all(results) else 1)
 
 
 def run_collect(cfg, name, repeat=1, tail_lines=60):
-    """程序化执行 run 目标(MCP/自动化用):捕获输出、不 sys.exit,返回结构化结果。
-    显示出口换成本轮缓冲(board.set_display)——设备输出(tap)与编排打印
-    都进 buf,绝不落调用方进程的 stdout(MCP 的 stdout 是协议通道);
-    stderr 不捕获(留给日志);基础设施错误转为该轮 error 而非抛出。"""
+    """Programmatically run a run target (for MCP/automation): captures
+    output, doesn't sys.exit, returns a structured result. The display sink
+    is swapped for a per-round buffer (board.set_display) — device output
+    (tap) and orchestration prints all go into buf, never landing on the
+    caller's stdout (MCP's stdout is a protocol channel); stderr isn't
+    captured (left for logs); infrastructure errors become that round's
+    error instead of raising."""
     targets = cfg.run
     if name not in targets:
-        return {'error': f'未定义的启动目标 {name!r}',
+        return {'error': f'undefined boot target {name!r}',
                 'available': sorted(targets)}
     t = targets[name]
 

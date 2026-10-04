@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""MCP server 协议级冒烟(无需硬件):起 server、列工具、调用只读工具与错误路径。
-用法:uv run --extra mcp python tests/test_mcp.py
+"""MCP server protocol-level smoke test (no hardware needed): starts the
+server, lists tools, calls the read-only tool and the error path.
+Usage: uv run --extra mcp python tests/test_mcp.py
 """
 import asyncio
 import os
@@ -10,7 +11,7 @@ try:
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 except ImportError:
-    print('skip: 未安装 mcp extra')
+    print('skip: mcp extra not installed')
     sys.exit(0)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -36,7 +37,7 @@ async def main():
             # error path (no hardware touched)
             r = await session.call_tool('run_target', {'board': 'no-such', 'target': 'x'})
             ok = getattr(r, 'isError', False) or any(
-                '未知开发板' in getattr(c, 'text', '') for c in (r.content or []))
+                'unknown board' in getattr(c, 'text', '') for c in (r.content or []))
             assert ok, r
 
             print('mcp tests: OK')

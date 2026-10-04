@@ -1,26 +1,37 @@
-"""启动模式插件接口约定(插件即类):
+"""Boot-mode plugin interface conventions (plugins are classes):
 
-每个插件模块需要提供:
-  PLUGIN: RunMode 子类       # 插件类(子类自身声明 NAME)
+Each plugin module must provide:
+  PLUGIN: a RunMode subclass         # the plugin class (subclasses declare NAME themselves)
 
-RunMode 子类约定:
-  __init__(self, cfg)                  # 板卡配置(全局信息,与 runner.cfg 同源)
+RunMode subclass conventions:
+  __init__(self, cfg)                  # board config (global info, same source as runner.cfg)
   launch(self, runner) -> (channel, cmdline, done)
-                                       # runner = 该目标的编排对象(一块板 ↔ 多个
-                                       # runner;board/cfg/name/t 都在其中)——
-                                       # 特定对象即对应 runner 的数据;
-                                       # 校验目标字段 + 按模式上电/传输;
-                                       # 返回流式引擎要用的 (板的串口通道, 待发命令);
-                                       # cmdline=None 表示零写入被动收流(watch);
-                                       # done 非 None 表示 launch 已自行收束
-                                       # (如 uboot 只加载不执行 -> 'loaded'),
-                                       # runner 跳过流式直接返回
+                                       # runner = the orchestration object for this
+                                       # target (one board ↔ many runners;
+                                       # board/cfg/name/t all live in it) —
+                                       # the specific object IS the
+                                       # corresponding runner's data;
+                                       # validate target fields + power on /
+                                       # transport per the mode;
+                                       # return (the board's serial channel,
+                                       # the command to send) for the
+                                       # streaming engine;
+                                       # cmdline=None means passive capture
+                                       # with zero writes (watch);
+                                       # done non-None means launch concluded
+                                       # itself (e.g. uboot loads without
+                                       # executing -> 'loaded'), the runner
+                                       # skips streaming and returns directly
 
-分工:模式插件只解释"这个目标怎么弄起来"(上电方式/传不传输/命令形态);
-流式引擎/断言/收尾/repeat 由 runner 统一持有——任何模式的判定与收尾
-语义完全一致,这是共享代码保证的不变量,不靠各插件自觉。
-类属性 NAME 对应 [run.*].mode。可用的域依赖:board(板域)/ serial /
-console。插件之间禁止互相 import。在此目录新建 .py 文件即自动注册。
+Division of labor: mode plugins only interpret "how this target gets
+brought up" (power-on style/whether to transport/command shape); the
+streaming engine/assertions/after-handling/repeat are held uniformly by
+the runner — verdict and after-handling semantics are identical for every
+mode; that invariant is guaranteed by shared code, not by each plugin's
+diligence. The class attribute NAME corresponds to [run.*].mode. Available
+domain dependencies: board (board domain) / serial / console. Plugins must
+not import each other. Dropping a new .py file in this directory
+auto-registers it.
 """
 import re
 import sys
@@ -30,32 +41,36 @@ import msgspec
 
 
 def expand_cmd(name, cmd, vals):
-    """展开目标 cmd 模板(执行命令是配置数据,不是代码):变量取 vals 映射
-    (由 target_vars 从目标翻出;模式级缺省如 uboot 的 {addr}/{entry} 由
-    各模式在调用前注入);未知变量报错指名,不静默留 {var} 字面量"""
+    """Expand a target's cmd template (the executed command is config data,
+    not code): variables come from the vals mapping (flipped out of the
+    target by target_vars; mode-level defaults like uboot's {addr}/{entry}
+    are injected by each mode before the call); an unknown variable errors
+    by name, no silent {var} literal left behind"""
 
     def _sub(m):
         k = m.group(1)
         if k not in vals or vals[k] is None:
-            sys.exit(f'run.{name} 的 cmd 用了 {{{k}}},但目标未配置该键')
+            sys.exit(f'cmd of run.{name} uses {{{k}}}, but the target has no such key configured')
         return str(vals[k])
 
     return re.sub(r'\{(\w+)\}', _sub, cmd)
 
 
 def target_vars(t):
-    """目标(RunTarget)→ cmd 模板变量映射:本目标键,剥 None。
-    缺省即缺省——None 字段不充当变量,与旧版剥 None 后的 dict 等价"""
+    """Target (RunTarget) → cmd-template variable mapping: the target's own
+    keys, None stripped. Absent means absent — None fields don't act as
+    variables, equivalent to the old post-strip-None dict"""
     return {k: v for k, v in msgspec.to_builtins(t).items() if v is not None}
 
 
 class RunMode(ABC):
-    """启动模式抽象:一个 [run.<名>] 目标"怎么弄起来"——封装 = 上电方式/
-    传输与否/命令形态藏在类里;多态 = runner 按 [run.*].mode 选子类,
-    流式/断言/收尾共用"""
+    """Boot-mode abstraction: how one [run.<name>] target "gets brought up" —
+    encapsulation = power-on style/transport-or-not/command shape hidden in
+    the class; polymorphism = the runner picks a subclass via [run.*].mode,
+    streaming/assertions/after-handling shared"""
 
     NAME = None            # registry name (subclasses must set), matches [run.*].mode
 
     @abstractmethod
     def launch(self, runner):
-        """校验 + 上电 + 传输;返回 (channel, cmdline, done)"""
+        """Validate + power on + transport; return (channel, cmdline, done)"""

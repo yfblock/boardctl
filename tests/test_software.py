@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""纯软件冒烟测试:不需要真机/串口/网络,CI 与本地都应能跑"""
+"""Pure-software smoke tests: no real board/serial/network needed, must run
+both in CI and locally"""
 import os
 import sys
 
@@ -37,12 +38,12 @@ assert expand_cmd('t', 'echo {{not var}}', {}) == 'echo {{not var}}'  # non-vari
 assert expand_cmd('t', 'tester {slot}', {'slot': 3}) == 'tester 3'  # console: variables come from target keys
 try:
     _expand(_mc, 't', RunTarget(cmd='booti {addr} - {fdt}'))
-    raise AssertionError('cmd 缺变量应报错退出')
+    raise AssertionError('a cmd with a missing variable should exit with an error')
 except SystemExit as e:
     assert 'fdt' in str(e) and 'run.t' in str(e), e
 try:
     expand_cmd('t', 'go {addr}', {})   # console has no address default, {addr} is an unknown variable
-    raise AssertionError('console 模式 {addr} 应报错退出')
+    raise AssertionError('console mode {addr} should exit with an error')
 except SystemExit as e:
     assert 'addr' in str(e) and 'run.t' in str(e), e
 
@@ -82,7 +83,7 @@ for name, t in cfg.run.items():
     if not os.path.isabs(path):
         path = os.path.join(BASE_DIR, path)
     assert os.path.isfile(path) or cfg.name == 'example', \
-        f'run.{name} 文件缺失: {path}'
+        f'run.{name} file missing: {path}'
 
 # 6. streaming engine (resident capture: ConsoleStream reader thread +
 #    watermark waiting; fake serial injected — threads/condition variables/
@@ -98,9 +99,11 @@ from boardctl.stream import ConsoleStream as _Stream  # noqa: E402
 
 
 class _FakeSer:
-    """伪串口:上电(power_on)前读恒空(模拟断电静默);上电后按序吐
-    chunks,块间 read_delay 秒;记录写入。引擎入口才打水位——有意义的首块
-    必须晚于水位,read_delay 0.03 即为此裕量"""
+    """Fake serial: reads stay empty before power_on (simulating the silence
+    of power-off); after power-on it emits chunks in order, read_delay
+    seconds between blocks; writes are recorded. The watermark is taken only
+    at the engine entry — a meaningful first block must come after it;
+    read_delay 0.03 exists for exactly that margin"""
 
     def __init__(self, chunks=(), powered=False, read_delay=0.03):
         self.pending = list(chunks)
@@ -189,10 +192,13 @@ _pcalls = []
 
 
 class _FakeBoard:
-    """Board 桩:serial 即伪串口(可注入),捕获流是真的;记录冷启动走哪条
-    路径(after=none 时 power 不触)。冷启动/静默上电/断电收尾的桩顺带
-    模拟上电,并镜像真实 Board 的显示面(tap 上电前挂、断电前摘、
-    set_display 换程序化出口)——伪串口只有 power_on 后才吐字节"""
+    """Board stub: serial is the fake serial (injectable), the capture
+    stream is real; records which path a cold boot took (with after=none
+    power isn't touched). The cold-boot/quiet-boot/power-off stubs also
+    simulate power-on and mirror the real Board's display surface (tap
+    attaches before power-on, detaches before power-off, set_display swaps
+    in a programmatic sink) — the fake serial only emits bytes after
+    power_on"""
 
     def __init__(self, cfg, ser=None):
         self.cfg = cfg
@@ -313,7 +319,7 @@ try:
         _runner.Runner(_FakeBoard(_mincfg), 'sh-t',
                        RunTarget(mode='console', cmd='x', file='f.bin',
                                  after='none')).run()
-    raise AssertionError('console 带 file 应被拒绝')
+    raise AssertionError('console with file should be rejected')
 except SystemExit as e:
     assert 'file' in str(e.code) and 'console' in str(e.code), e.code
 
@@ -321,7 +327,7 @@ except SystemExit as e:
 try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         _runner.Runner(_FakeBoard(_mincfg), 't', RunTarget(mode='gdb', after='none')).run()
-    raise AssertionError('未知 mode 应被拒绝')
+    raise AssertionError('an unknown mode should be rejected')
 except SystemExit as e:
     assert 'gdb' in str(e.code) and 'uboot' in str(e.code), e.code
 
@@ -330,7 +336,7 @@ try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         _runner.Runner(_FakeBoard(_mincfg), 'watch-t',
                        RunTarget(mode='watch', file='hello.bin', after='none')).run()
-    raise AssertionError('watch 带 file 应被拒绝')
+    raise AssertionError('watch with file should be rejected')
 except SystemExit as e:
     assert 'file' in str(e.code), e.code
 
@@ -339,7 +345,7 @@ try:
     with contextlib.redirect_stdout(_io2.StringIO()):
         _runner.Runner(_FakeBoard(_mincfg), 'go-t',
                        RunTarget(cmd='go {addr}', after='none')).run()
-    raise AssertionError('主动模式缺 file 应报错')
+    raise AssertionError('an active mode missing file should error out')
 except SystemExit as e:
     assert 'file' in str(e.code), e.code
 
@@ -380,24 +386,24 @@ try:
     assert ''.join(_taplog) == 'tap1\r\ntap3\r\n', _taplog
 
     def _bad_tap(_text):
-        raise RuntimeError('显示炸了也不许死')
+        raise RuntimeError('display blew up — still must not die')
 
     _pst.set_tap(_bad_tap)
     _pser.live = [b'tap4\r\n']
-    assert _pst.wait(lambda txt: 'tap4' in txt, 0, 2)[1]      # 捕获线程仍活着
+    assert _pst.wait(lambda txt: 'tap4' in txt, 0, 2)[1]      # the capture thread is still alive
 finally:
     _pst.stop()
 
 # multi-byte char split across two reads: an empty decode frame doesn't kill the pump, display/capture lose no characters
-_pser2 = _FakeSer([b'\xe4\xb8', b'\xad\xe6\x96\x87\r\n'], powered=True)
+_pser2 = _FakeSer([b'h\xc3', b'\xa9llo\r\n'], powered=True)
 _pst2 = _Stream(_pser2)
 _t2 = []
 _pst2.set_tap(_t2.append)
 _pst2.start()
 try:
-    assert _pst2.wait(lambda txt: '中文' in txt, 0, 2)[1]
+    assert _pst2.wait(lambda txt: 'héllo' in txt, 0, 2)[1]
     _pst2.set_tap(None)
-    assert ''.join(_t2) == '中文\r\n', _t2
+    assert ''.join(_t2) == 'héllo\r\n', _t2
 finally:
     _pst2.stop()
 
@@ -439,7 +445,7 @@ with tempfile.TemporaryDirectory() as td:
     cfg_l = BoardCfg(name='l', tftp=TftpCfg(method='local', local_dir=str(root)))
     try:
         _tftp.TftpTransport(cfg_l)._stage_file(str(root / 'hello.bin'))
-        raise AssertionError('method=local 应 sys.exit 退出(已移除)')
+        raise AssertionError('method=local should sys.exit (removed)')
     except SystemExit as e:
         assert 'external' in str(e) and 'loady' in str(e), e
 
@@ -460,7 +466,7 @@ assert _mijia.MijiaPower(BoardCfg(name='m', power=PowerCfg(mijia=MijiaCfg(prop='
 
 
 class _FakePowerPlugin:
-    """PowerDevice 形状的桩:记录 on/off 调用,status 可拨"""
+    """PowerDevice-shaped stub: records on/off calls, status is dialable"""
 
     NAME = 'fake'
     calls = []
@@ -531,7 +537,7 @@ with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/e.toml
             contextlib.redirect_stderr(_io2.StringIO()) as _se:
         try:
             _cli.app.meta(['run', 'hello', '-r', 'abc'])
-            raise AssertionError('非法 repeat 应被拒绝')
+            raise AssertionError('an illegal repeat should be rejected')
         except SystemExit as e:
             assert e.code not in (0, None), e.code
     assert 'abc' in _so.getvalue() + _se.getvalue(), (_so.getvalue(), _se.getvalue())
@@ -541,9 +547,9 @@ with _mock.patch.object(_cli, 'available_boards',
                         lambda: {'a': '/x/a.toml', 'b': '/x/b.toml'}):
     try:
         _cli.app.meta(['run'])
-        raise AssertionError('多板未指定 -b 应报错退出')
+        raise AssertionError('multiple boards without -b should error out')
     except SystemExit as e:
-        assert '请用 -b' in str(e.code), e.code
+        assert 'Specify a board with -b' in str(e.code), e.code
 
 # power dispatch: state and board config reach the Power facade's
 #    on/off/status (subcommand orchestration lives in cli: status prints
@@ -552,9 +558,9 @@ _pcalls = []
 
 
 class _FakeCliPower:
-    """Power 门面桩:记录 on/off/status 调用(板名经 cfg)"""
+    """Power facade stub: records on/off/status calls (board name via cfg)"""
 
-    desc = '插件 fake'
+    desc = 'plugin fake'
 
     def __init__(self, cfg):
         self.cfg = cfg
@@ -573,12 +579,12 @@ class _FakeCliPower:
 with _mock.patch.object(_cli, 'load_board', lambda n: BoardCfg(name=n)), \
         _mock.patch.object(_cli.power, 'Power', _FakeCliPower):
     with contextlib.redirect_stdout(_io2.StringIO()):
-        _cli.power_ctl('off', cfg=BoardCfg(name='ex'))           # 直调函数
-        _cli.app.meta(['-b', 'ex', 'power', 'off'])                # 经 cyclopts
+        _cli.power_ctl('off', cfg=BoardCfg(name='ex'))           # direct function call
+        _cli.app.meta(['-b', 'ex', 'power', 'off'])                # via cyclopts
     assert _pcalls == [('ex', 'off'), ('ex', 'off')], _pcalls
     with contextlib.redirect_stdout(_io2.StringIO()) as _so:
-        _cli.power_ctl('status', cfg=BoardCfg(name='ex'))        # status 打印开/关
-    assert _so.getvalue() == '关\n', _so.getvalue()
+        _cli.power_ctl('status', cfg=BoardCfg(name='ex'))        # status prints on/off
+    assert _so.getvalue() == 'off\n', _so.getvalue()
 
 # illegal power state: Literal rejected at the parse layer (the in-function manual check remains, guarding programmatic calls)
 with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/e.toml'}):
@@ -586,14 +592,14 @@ with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/e.toml
             contextlib.redirect_stderr(_io2.StringIO()) as _se:
         try:
             _cli.app.meta(['power', 'bogus'])
-            raise AssertionError('非法 power state 应被拒绝')
+            raise AssertionError('an illegal power state should be rejected')
         except SystemExit as e:
             assert e.code not in (0, None), e.code
     assert 'bogus' in _so.getvalue() + _se.getvalue(), (_so.getvalue(), _se.getvalue())
 
 # ls dispatch
 with _mock.patch.object(_cli, 'available_boards', lambda: {'example': '/x/example.toml'}), \
-        _mock.patch.object(_cli, 'load_board', lambda n: BoardCfg(name=n, description='示例')):
+        _mock.patch.object(_cli, 'load_board', lambda n: BoardCfg(name=n, description='demo')):
     with contextlib.redirect_stdout(_io2.StringIO()) as _so:
         _cli.app.meta(['ls'])
 assert 'example' in _so.getvalue(), _so.getvalue()
@@ -620,7 +626,7 @@ with tempfile.TemporaryDirectory() as _td:
         encoding='utf-8')
     (Path(_td) / 'z.toml').write_text(
         '[console]\nprompt = "sh$ "\n', encoding='utf-8')
-    (Path(_td) / 'example.toml').write_text('description = "覆盖同名内置示例"\n',
+    (Path(_td) / 'example.toml').write_text('description = "overrides the bundled same-name example"\n',
                                             encoding='utf-8')
     (Path(_td) / 'ignored.txt').write_text('not a board', encoding='utf-8')
     os.environ['BOARDCTL_BOARDS'] = _td
@@ -663,22 +669,22 @@ with tempfile.TemporaryDirectory() as _td:
         assert load_board('m').loady.sender == '/opt/sb'          # user value goes straight through
 
         for _body, _why in [
-            ('[run.h]\nexpcet = ["X"]\n', '拼错的键'),
-            ('[run.h]\nafter = "reboot"\n', '非法枚举'),
-            ('[serial]\ntimeout = "abc"\n', '类型错误'),
-            ('[run.h]\ntimeout = -5\n', '负超时'),
-            ('[serial]\nurll = "x"\n', '核心段未知键'),
-            ('[run.h]\nexpect = "X"\n', '断言标量(须列表)'),
-            ('[uboot]\nprompt = "soph#"\n', '旧式 prompt(现归 [console])'),
-            ('[run.h]\nexec = "watch"\n', '旧式 exec(现归 mode)'),
-            ('[run.h]\nreset_after = true\n', '旧式 reset_after(现归 after)'),
+            ('[run.h]\nexpcet = ["X"]\n', 'misspelled key'),
+            ('[run.h]\nafter = "reboot"\n', 'illegal enum'),
+            ('[serial]\ntimeout = "abc"\n', 'type error'),
+            ('[run.h]\ntimeout = -5\n', 'negative timeout'),
+            ('[serial]\nurll = "x"\n', 'unknown key in a core section'),
+            ('[run.h]\nexpect = "X"\n', 'scalar assertion (needs a list)'),
+            ('[uboot]\nprompt = "soph#"\n', 'legacy prompt (now [console])'),
+            ('[run.h]\nexec = "watch"\n', 'legacy exec (now mode)'),
+            ('[run.h]\nreset_after = true\n', 'legacy reset_after (now after)'),
         ]:
             _toml(_body)
             try:
                 load_board('m')
-                raise AssertionError(f'{_why}应被拒绝')
+                raise AssertionError(f'{_why} should be rejected')
             except SystemExit as _e:
-                assert '配置无效' in str(_e), _e
+                assert 'invalid config' in str(_e), _e
 
         # check subcommand: good configs print per-board OK, exit 0; bad ones
         # print per-board details, exit 1 (mocked board list stays closed: no
@@ -700,10 +706,10 @@ with tempfile.TemporaryDirectory() as _td:
             with contextlib.redirect_stdout(_io2.StringIO()) as _so:
                 try:
                     _cli.check()
-                    raise AssertionError('坏配置 check 应以退出码 1 结束')
+                    raise AssertionError('check with a bad config should end with exit code 1')
                 except SystemExit as _e:
                     assert _e.code == 1, _e.code
-        assert '配置无效' in _so.getvalue() and 'expcet' in _so.getvalue(), _so.getvalue()
+        assert 'invalid config' in _so.getvalue() and 'expcet' in _so.getvalue(), _so.getvalue()
     finally:
         os.environ.pop('BOARDCTL_BOARDS', None)
 

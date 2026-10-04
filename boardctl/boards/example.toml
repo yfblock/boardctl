@@ -1,73 +1,75 @@
-# 板卡配置模板:复制到 ~/.config/boardctl/<板名>.toml 后按需修改。
-# 所有 IP 使用文档示例网段(RFC 5737),请替换为你的实际环境。
-description = "示例模板(复制到 ~/.config/boardctl/ 并修改)"
+# Board config template: copy to ~/.config/boardctl/<board-name>.toml and
+# adapt as needed. All IPs use documentation example ranges (RFC 5737) —
+# replace them with your real environment.
+description = "Example template (copy to ~/.config/boardctl/ and adapt)"
 
-ssh_host = ""                      # 命令模式命令的执行位置:空 = 本机;填 ssh 别名则经 ssh 远端执行
+ssh_host = ""                      # where command-mode commands run: empty = local; an ssh alias runs them remotely via ssh
 
 [serial]
-url = "socket://192.0.2.10:5000"   # 串口桥 URL(如 ser2net/TCP 透传);也支持本地 ttyUSB0、rfc2217://
+url = "socket://192.0.2.10:5000"   # serial bridge URL (e.g. ser2net/TCP passthrough); local ttyUSB0 and rfc2217:// also work
 timeout = 0.2
 
 [console]
-prompt = "=>"                      # 控制台提示符(命令结束的判定依据);
-                                   # 板上跑什么就配什么:U-Boot "=>"、Linux shell "#"…皆可
+prompt = "=>"                      # console prompt (the basis for command-end detection);
+                                   # configure whatever runs on the board: U-Boot "=>", a Linux shell "#"… anything works
 
 [uboot]
-load_addr = "0x80080000"           # 默认加载地址
-ip_addr = "192.0.2.50"             # 设备自身 IP(静态)
-server_ip = "192.0.2.1"            # TFTP 服务器地址
-ensure_server_ip = false           # 目标 U-Boot 环境易失(无 saveenv)时置 true,连接时自动恢复 serverip
+load_addr = "0x80080000"           # default load address
+ip_addr = "192.0.2.50"             # the device's own IP (static)
+server_ip = "192.0.2.1"            # TFTP server address
+ensure_server_ip = false           # set true when the target's U-Boot environment is volatile (no saveenv): serverip is restored automatically on connect
 
 [power]
-method = "command"                 # command(默认)| mijia(需 pip install 'boardctl[mijia]')
-reset_delay = 3                    # 断电到上电的间隔(秒)
-on_cmd = "echo 'power on'"         # 开机命令(替换为真实控制命令,如智能插座/继电器脚本)
+method = "command"                 # command (default) | mijia (needs pip install 'boardctl[mijia]')
+reset_delay = 3                    # seconds between power-off and power-on
+on_cmd = "echo 'power on'"         # power-on command (replace with a real control command, e.g. a smart plug/relay script)
 off_cmd = "echo 'power off'"
-# status_cmd = "..."               # 可选:查询电源状态
+# status_cmd = "..."               # optional: query the power state
 
-# 米家智能插座方式(原生小米云,凭证复用 mijiaAPI CLI 登录态):
+# Mijia smart socket approach (native Xiaomi cloud, credentials reuse the
+# mijiaAPI CLI login state):
 # [power.mijia]
-# dev_name = "plug-name"           # 或 did = "123456"
-# prop = "on"                      # 开关量属性名:多数插座是 on;
-#                                  # 部分设备的电源 prop 不是 on,按设备属性表改
+# dev_name = "plug-name"           # or did = "123456"
+# prop = "on"                      # on/off property name: 'on' for most sockets;
+#                                  # some devices' power prop isn't 'on' — change per the device's property table
 
 [tftp]
-method = "remote"                  # remote: scp 到远端 tftp 服务器
-                                   # external: 本机已有常驻 tftpd(如 tftpd-hpa),只落文件免特权
-ssh_host = "tftp-server"           # method=remote 时的 ssh 别名(~/.ssh/config)
+method = "remote"                  # remote: scp to a remote tftp server
+                                   # external: a resident tftpd (e.g. tftpd-hpa) already on this host; just stage the file, no privileges
+ssh_host = "tftp-server"           # ssh alias for method=remote (from ~/.ssh/config)
 remote_dir = "/srv/tftp"
-local_dir = "tftpboot"             # external 时的 tftp 根目录
+local_dir = "tftpboot"             # tftp root dir for method=external
 
 [loady]
-sender = ""                        # Ymodem 发送器;空则自动查找(Arch: lrzsz-sb,Debian/Ubuntu: sb)
+sender = ""                        # Ymodem sender; empty = autodetect (Arch: lrzsz-sb, Debian/Ubuntu: sb)
 
 [run.hello]
-desc = "示例:裸机程序(go 跳转)"
-mode = "uboot"                     # 启动模式(缺省):传文件到 addr 再执行 cmd;
-                                   # console = 不传输直接执行命令;watch = 被动观察
-file = "hello.bin"                 # 占位路径,替换为你的固件(相对项目根或绝对路径)
-addr = "0x80080000"                # 加载地址(缺省取 uboot.load_addr)
-# entry = "0x80080000"             # 跳转地址(缺省 = addr;加载与入口不同时分别指定)
-cmd = "go {addr}"                  # 执行命令模板:{addr}/{entry} 缺省取 uboot.load_addr,
-                                   # 其余变量取本目标键(fdt/initrd…);不写 = 只加载;
-                                   # 命令序列写进 .scr 后 cmd = "source {addr}"
+desc = "Example: bare-metal program (go jump)"
+mode = "uboot"                     # boot mode (default): transport the file to addr then execute cmd;
+                                   # console = execute a command directly, no transport; watch = passive watching
+file = "hello.bin"                 # placeholder path, replace with your firmware (relative to project root or absolute)
+addr = "0x80080000"                # load address (defaults to uboot.load_addr)
+# entry = "0x80080000"             # jump address (defaults to addr; specify separately when load and entry differ)
+cmd = "go {addr}"                  # command template: {addr}/{entry} default to uboot.load_addr,
+                                   # other variables come from this target's own keys (fdt/initrd…); omitted = load only;
+                                   # for command sequences write a .scr and use cmd = "source {addr}"
 method = "tftp"                    # tftp / loady
-timeout = 10                       # 执行后收集输出的秒数
-reset_before = true                # 自动开机:关→开→等提示符(不依赖设备初始状态)
-after = "off"                      # 收尾:off 断电 / reset 回提示符 / none 保持
-expect = ["BM-TEST-START"]         # 输出断言(子串);expect_re 正则版;fail_re 禁止命中
-                                  # 正向断言全部命中即提前收工(流式,不等满 timeout)
-# interactive = true              # 交互模式(TTY):输出实时流 + stdin 转发进设备
-                                  # (go/booti 进内核后可继续敲命令),Ctrl-\ 退出
-# fail_re = ["Kernel panic", "(?i)panic"]   # 禁止命中:流式一命中即判负
-                                              # (正则区分大小写;(?i) 同时覆盖 Kernel panic 与 Rust panicked)
-# fail_linger = 2                           # fail_re 命中后继续收集输出的秒数(默认 2,
-                                              # 让错误栈吐完整再断电;0 = 立即收)
+timeout = 10                       # seconds to collect output after execution
+reset_before = true                # automatic power-on: off→on→wait for prompt (no dependence on the device's initial state)
+after = "off"                      # finish: off = power down / reset = back to prompt / none = keep state
+expect = ["BM-TEST-START"]         # output assertions (substrings); expect_re for regexes; fail_re must not hit
+                                  # when all positive assertions hit, wrap up early (streaming, no waiting out timeout)
+# interactive = true              # interactive mode (TTY): output streams live + stdin forwarded into the device
+                                  # (keep typing commands after go/booti enters the kernel), Ctrl-\ to quit
+# fail_re = ["Kernel panic", "(?i)panic"]   # must not hit: one streaming hit = negative verdict
+                                              # (regexes are case-sensitive; (?i) covers both Kernel panic and Rust panicked)
+# fail_linger = 2                           # seconds to keep collecting output after a fail_re hit (default 2,
+                                              # lets the error stack finish before power-off; 0 = wrap up immediately)
 
-# 引导 Linux 内核示例(booti 原始 Image:fdt 必需,initrd 可选):
+# Example booting a Linux kernel (booti raw Image: fdt required, initrd optional):
 # [run.kernel]
 # file = "Image"
-# cmd = "booti {addr} - {fdt}"     # 带 initrd:booti {addr} {initrd} {fdt}
+# cmd = "booti {addr} - {fdt}"     # with initrd: booti {addr} {initrd} {fdt}
 # fdt = "0x83000000"
 # initrd = "0x82000000"
 # reset_before = true
@@ -75,21 +77,23 @@ expect = ["BM-TEST-START"]         # 输出断言(子串);expect_re 正则版;fa
 # expect_re = ["Starting kernel"]
 # fail_re = ["panic", "ERROR:"]
 
-# Linux shell 控制台示例(不传输,上电进 shell 直接执行;无地址语义):
+# Linux shell console example (no transport, power on into the shell and
+# execute directly; no address semantics):
 # [run.selftest]
-# mode = "console"                 # cmd 必填;{addr} 等未配置的变量报错指名
-# cmd = "./selftest.sh"            # 变量取本目标键(如 cmd = "tester {slot}")
+# mode = "console"                 # cmd required; unconfigured variables like {addr} error by name
+# cmd = "./selftest.sh"            # variables come from this target's own keys (e.g. cmd = "tester {slot}")
 # reset_before = true
 # after = "off"
 # expect = ["ALL PASS"]
 
-# 被动观察示例(板子自己跑自动流程:bootcmd/板上脚本完成传输与执行):
+# Passive-watching example (the board runs its own automatic flow: bootcmd/
+# on-board scripts do the transport and execution):
 # [run.autoboot]
-# desc = "示例:被动观察板上自动启动"
-# mode = "watch"                    # 不传输、不发送任何命令(不允许 file/cmd);
-#                                   # 静默上电(不发 Ctrl-C 等提示符,不打断板上流程),
-#                                   # 从启动输出的第一个字节开始收
+# desc = "Example: passively watch the board's automatic boot"
+# mode = "watch"                    # no transport, no commands sent (file/cmd not allowed);
+#                                   # quiet power-on (no prompt-waiting Ctrl-C, nothing interrupts the board's flow),
+#                                   # capture starts from the very first byte of boot output
 # reset_before = true
 # timeout = 30
 # after = "off"
-# expect = ["TEST_RUNNER_DONE"]     # 断言/收尾与主动模式完全一致
+# expect = ["TEST_RUNNER_DONE"]     # assertions/finish exactly as in active mode

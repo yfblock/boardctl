@@ -1,14 +1,21 @@
-"""开发板域:一块具体的板。对应配置文件里的 [serial]/[power]/[console] 段——
-板包含一截串口通道、一个常驻捕获流、一个电源对象与一个控制台对象(组合,
-与配置结构一致;控制台是什么载荷由 [console].prompt 决定:U-Boot、Linux
-shell、其他 CLI),承载"开机进入可交互态"的流程(冷启动等提示符 / 静默
-上电)与控制台会话工厂。
-会话与传输插件都在板的捕获流上工作(借用);整轮 run 一条连接:读侧唯一
-归捕获线程,写侧由调用线程直写通道,fd 借出经 park/resume 让位。
-显示(tap)生命周期也归板:上电前挂上(上电起的输出即捕即显——启动
-日志/回显不再黑盒)、断电前摘下(线路噪声不上屏);程序化调用可把
-显示出口换成缓冲(run_collect——设备字节不落服务进程的 stdout)。
-依赖方向:board → {power, serial, stream, console};禁止反向。
+"""Dev-board domain: one concrete board. Maps to the [serial]/[power]/[console]
+sections in a config file — a board bundles a piece of serial channel, one
+resident capture stream, one power object and one console object (composition,
+mirroring the config structure; what console payload it is comes from
+[console].prompt: U-Boot, Linux shell, other CLIs), and carries the
+"power on into an interactive state" flows (cold boot waiting for the prompt /
+quiet power-on) plus the console-session factory.
+
+Sessions and transport plugins both work on the board's capture stream
+(borrowed); a whole run uses one connection: the read side belongs solely to
+the capture thread, the write side is written straight to the channel by the
+calling thread, fd lending yields via park/resume. The display (tap)
+lifecycle also belongs to the board: attached before power-on (output from
+power-on is shown as captured — boot logs/echoes are no longer a black box),
+detached before power-off (line noise stays off screen); programmatic calls
+can swap the display sink for a buffer (run_collect — device bytes never
+land on the service process's stdout).
+Dependency direction: board → {power, serial, stream, console}; never reversed.
 """
 import sys
 import time
@@ -20,8 +27,10 @@ from .stream import ConsoleStream
 
 
 class Board:
-    """一块板 = 串口 + 常驻捕获流 + 电源 + 控制台;上下文管理器:
-    进入起捕获线程,退出停线程、关串口。显示(tap)上电前挂、断电前摘"""
+    """One board = serial + resident capture stream + power + console;
+    context manager: entering starts the capture thread, exiting stops the
+    thread and closes the serial. Display (tap) attaches before power-on,
+    detaches before power-off"""
 
     def __init__(self, cfg):
         self.cfg = cfg
@@ -42,18 +51,18 @@ class Board:
 
     @property
     def prompt(self):
-        """控制台提示符(执行结束判定依据)——常用捷径"""
+        """Console prompt (the basis for execution-end detection) — a frequent shortcut"""
         return self.console.prompt
 
     def session(self):
-        """在板的常驻捕获流上开一个控制台会话(借用,不持有)"""
+        """Open a console session on the board's resident capture stream (borrowed, not owned)"""
         return self.console.session(self.stream)
 
     # ---- display (tap): hooked on capture events, shown as captured ----
     def set_display(self, out):
-        """程序化调用(run_collect/MCP)换显示出口:设备输出写进 out 而
-        非 stdout——服务进程(MCP)的 stdout 是协议通道,设备字节不得
-        落上去"""
+        """For programmatic calls (run_collect/MCP), swap the display sink:
+        device output goes into out instead of stdout — a service process's
+        (MCP) stdout is a protocol channel, device bytes must not land on it"""
         self._display = out
 
     def _show(self, text):
@@ -62,43 +71,51 @@ class Board:
         out.flush()
 
     def _power_cycle(self, note=None):
-        """断电 -> 延时 -> 上电(节拍值归电源域 reset_delay)。note 是
-        上电前的提示行(冷启动的"等待控制台提示符"):提示先落屏、
-        再挂显示、再上电——上电即出 SPL 字节,提示行才不会被撕进
-        字节流中间,也不会晚于对串口的任何写入(轮询 Ctrl-C 在其后的
-        等待循环里)。显示在断电前摘下、上电前挂上:上电起的输出
-        即捕即显,断电窗口的线路噪声不上屏"""
+        """Power off -> delay -> power on (the cadence value is the power
+        domain's reset_delay). note is the notice line before power-on (the
+        cold boot's "waiting for console prompt"): the notice lands on
+        screen first, then the display attaches, then power-on — SPL bytes
+        come out the moment power applies, so the notice line can't get torn
+        into the middle of the byte stream, nor arrive later than any write
+        to the serial (the polling Ctrl-C lives in the wait loop after it).
+        The display detaches before power-off and attaches before power-on:
+        output from power-on is shown as captured, line noise in the
+        power-off window stays off screen"""
         self.stream.set_tap(None)
-        print('断电...', flush=True)
+        print('powering off...', flush=True)
         self.power.off()
         time.sleep(self.power.reset_delay)
-        print('上电...', flush=True)
+        print('powering on...', flush=True)
         if note:
             print(note, flush=True)
         self.stream.set_tap(self._show)   # the notice has landed; power-on bytes display live from here
         self.power.on()
 
     def cold_boot(self, boot_timeout=60):
-        """断电 → 上电 → 轮询等待控制台提示符(从任意状态回到干净可交互态,
-        不论载荷是 U-Boot、Linux shell 还是其他 CLI)。启动输出即捕即显
-        (tap 挂在上电前)——等待不再是黑盒。轮询会周期性向串口发 Ctrl-C
-        清残留输入——不可用于被动观察"""
-        self._power_cycle(note='等待控制台提示符...')
+        """Power off → power on → poll for the console prompt (back to a
+        clean interactive state from any state, whether the payload is
+        U-Boot, a Linux shell or another CLI). Boot output is shown as
+        captured (the tap attaches before power-on) — waiting is no longer a
+        black box. Polling periodically sends Ctrl-C to the serial to clear
+        leftover input — not usable for passive watching"""
+        self._power_cycle(note='waiting for console prompt...')
         deadline = time.monotonic() + boot_timeout
         while time.monotonic() < deadline:
             if self.console.interactive_ready(self.session(), timeout=6):
                 return
             time.sleep(2)
-        sys.exit(f'上电后 {boot_timeout} 秒内未等到控制台提示符')
+        sys.exit(f'console prompt not seen within {boot_timeout}s of power-on')
 
     def quiet_boot(self):
-        """静默上电(mode=watch 被动模式):断 → 延时 → 清噪 → 合,
-        全程不向串口写入一个字节——板子自己跑自动流程,任何写入都会打断它
-        (故不能复用 cold_boot:轮询等提示符会周期性发 Ctrl-C)。
-        清噪 = 内核缓冲 drain + 捕获日志 clear:上电后收到的第一个字节
-        就是启动输出(捕获与显示的起点都是上电)"""
+        """Quiet power-on (mode=watch passive mode): off → delay → noise
+        clear → on, without writing a single byte to the serial — the board
+        runs its own automatic flow, any write would interrupt it (hence
+        cold_boot can't be reused: polling for the prompt periodically sends
+        Ctrl-C). Noise clear = kernel-buffer drain + capture-log clear: the
+        first byte received after power-on is boot output (capture and
+        display both start at power-on)"""
         self.stream.set_tap(None)   # power-off window (incl. last round's leftovers): line noise stays off screen
-        print('断电...', flush=True)
+        print('powering off...', flush=True)
         self.power.off()
         time.sleep(self.power.reset_delay)
         self.serial.drain()     # power-off noise still in the kernel receive buffer
@@ -106,17 +123,19 @@ class Board:
         # the notice lands on screen before the display attaches (same
         # cold-boot discipline): SPL bytes arrive at power-on without tearing
         # the notice line into the byte stream
-        print('上电(静默,不写串口)...', flush=True)
+        print('powering on (quiet, no serial writes)...', flush=True)
         self.stream.set_tap(self._show)
         self.power.on()
 
     def reboot(self):
-        """断电重启回提示符(after=reset 收尾):冷启动同款节拍,不等
-        提示符(由下一轮/用户接管);上电起的输出继续即捕即显"""
+        """Power-cycle reboot back to the prompt (after=reset finish): same
+        cadence as cold boot, doesn't wait for the prompt (the next round or
+        the user takes over); output from power-on keeps showing as captured"""
         self._power_cycle()
 
     def power_off(self):
-        """断电(after=off 收尾):先摘显示再断电——断电后的线路噪声不上屏
-        (摘下前放完积压,尾显不丢)"""
+        """Power off (after=off finish): detach the display before cutting
+        power — line noise after power-off stays off screen (backlog flushed
+        before detaching, the tail of the display isn't lost)"""
         self.stream.set_tap(None)
         self.power.off()

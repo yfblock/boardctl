@@ -1,15 +1,20 @@
-"""插件注册表:按目录约定自动发现,无需注册代码。
+"""Plugin registry: auto-discovery by directory convention, no registration
+code.
 
-- plugins/transport/<mod>.py   传输插件(Transport 子类)
-- plugins/power/<mod>.py       电源插件(PowerDevice 子类)
-- plugins/mode/<mod>.py        启动模式插件(RunMode 子类,[run.*].mode 选择)
+- plugins/transport/<mod>.py   transport plugins (Transport subclasses)
+- plugins/power/<mod>.py       power plugins (PowerDevice subclasses)
+- plugins/mode/<mod>.py        boot-mode plugins (RunMode subclasses,
+                               selected via [run.*].mode)
 
-插件即类:每个插件模块提供 PLUGIN = <类>;类声明 NAME(注册名)。
-配置段的形状与默认值统一住在 schema.py(单一来源),插件经 cfg 属性
-自取所需段。新建插件 = 在对应目录加一个模块文件,自动生效;若带新
-配置段,在 schema.BoardCfg 加字段即可(暂不定形的段可先声明 dict)。
-(执行命令本身是 [run.*].cmd 配置模板,不是插件——0.11.0 起;mode 族
-解释的是"目标怎么弄起来",不是"执行什么命令"。)
+Plugins are classes: each plugin module provides PLUGIN = <class>; the class
+declares NAME (the registry name). Config section shapes and defaults live
+uniformly in schema.py (single source); plugins take the sections they need
+via cfg attributes. Creating a plugin = drop a module file into the right
+directory, effective automatically; if it brings a new config section, just
+add the field to schema.BoardCfg (a section not yet settled can first be
+declared as dict). (The executed command itself is a [run.*].cmd config
+template, not a plugin — since 0.11.0; the mode family interprets "how a
+target gets brought up", not "what command to execute".)
 """
 import importlib
 import pkgutil

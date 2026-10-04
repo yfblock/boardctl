@@ -1,13 +1,16 @@
-"""命令行入口:极简命令面——run(一键全流程)+ ls(列表)+ power(电源控制)
-+ check(校验配置)
+"""CLI entry: minimal command surface — run (one-shot full flow) + ls (list)
++ power (power control) + check (validate config)
 
-cyclopts 注解式解析:类型即校验——repeat 声明 int、power state 用 Literal
-合法值,非法参数在解析层即报错(带用法提示)。全局 -b/--board 须经 meta
-入口收下(置于子命令前,与历代一致);板卡配置在 meta 层解析一次,注入
-声明了 cfg 的子命令(Annotated[..., Parameter(parse=False)] 约定,经
-parse_args 的 ignored 传递)——ls/check 不声明即不解析。run 的打断善后
-直住在 run 体里,且在 cfg 已落定后才装信号钩子:板名解析阶段的退出
-不触发善后。
+cyclopts annotation-driven parsing: the type IS the validation — repeat is
+declared int, power state uses a Literal of legal values, illegal arguments
+error at the parse layer (with usage hints). The global -b/--board must be
+received through the meta entry (placed before the subcommand, as in every
+era so far); the board config is resolved once at the meta layer and injected
+into subcommands that declare cfg (the Annotated[..., Parameter(parse=False)]
+convention, delivered via parse_args's ignored) — ls/check don't declare it,
+so it isn't resolved. run's interrupt cleanup lives directly in the run body,
+and the signal hook is installed only after cfg is settled: exits during
+board-name resolution don't trigger cleanup.
 """
 import os
 import signal
@@ -30,7 +33,7 @@ app = cyclopts.App(name='boardctl', version=__version__,
 
 
 class _Interrupted(BaseException):
-    """SIGTERM 等信号转成的可捕获中断"""
+    """Catchable interrupt translated from SIGTERM and friends"""
 
 
 def _on_signal(signum, _frame):
@@ -38,19 +41,20 @@ def _on_signal(signum, _frame):
 
 
 def _board_name(raw):
-    """-b 原始值 → 板名:缺省且仅一块用户板(包内置示例不算)时自动选中"""
+    """raw -b value → board name: when omitted and exactly one user board
+    exists (bundled example doesn't count), it is auto-selected"""
     if raw is None:
         user_boards = {n: p for n, p in available_boards().items()
                        if not p.startswith(BUNDLED_BOARDS_DIR + os.sep)}
         if len(user_boards) == 1:
             return next(iter(user_boards))
-        sys.exit('请用 -b 指定开发板,可用: '
-                 + (' '.join(sorted(user_boards)) or '(无;先在 ~/.config/boardctl/ 放配置)'))
+        sys.exit('Specify a board with -b. Available: '
+                 + (' '.join(sorted(user_boards)) or '(none; put a config in ~/.config/boardctl/ first)'))
     return raw
 
 
-_NO_BOARDS = ('没有找到任何板卡配置。把板卡 TOML 放到 ~/.config/boardctl/\n'
-              '(模板可参考包内置示例 boardctl/boards/),或用 $BOARDCTL_BOARDS 指定目录')
+_NO_BOARDS = ('No board configs found. Put board TOMLs in ~/.config/boardctl/\n'
+              '(the bundled example under boardctl/boards/ is a good template), or point $BOARDCTL_BOARDS at a directory')
 
 
 @app.meta.default
@@ -58,10 +62,11 @@ def _launch(
     *tokens: Annotated[str, Parameter(show=False, allow_leading_hyphen=True)],
     board: Annotated[str | None,
                      Parameter(name=['-b', '--board'],
-                               help='开发板名(缺省:仅一块用户板卡时自动选中)')] = None,
+                               help='board name (default: auto-selected when there is exactly one user board)')] = None,
 ):
-    """开发板控制工具:一键全流程(冷启动→传输→执行→断言→收尾),
-    板卡与启动目标配置见 ~/.config/boardctl,插件化传输/执行/电源/启动模式"""
+    """Dev-board control tool: one-shot full flow (cold boot → transport →
+    execute → assert → after-handling); boards and boot targets are configured
+    in ~/.config/boardctl, with pluggable transport/power/boot-mode"""
     command, bound, ignored = app.parse_args(tokens)
     if 'cfg' in ignored:                 # resolve board only for subcommands declaring cfg (ls/check don't)
         ignored['cfg'] = load_board(_board_name(board))
@@ -70,18 +75,18 @@ def _launch(
 
 @app.command
 def run(
-    name: Annotated[str | None, Parameter(help='启动目标名(省略则列出可用目标)')] = None,
+    name: Annotated[str | None, Parameter(help='boot target name (omitted: list available targets)')] = None,
     repeat: Annotated[int, Parameter(name=['-r', '--repeat'],
-                                     help='重复轮数(>1 时每轮冷启动,结束汇总 PASS/FAIL)')] = 1,
+                                     help='repeat count (>1: cold boot each round, PASS/FAIL summary at the end)')] = 1,
     *,
     cfg: Annotated[BoardCfg, Parameter(parse=False)],
 ):
-    """一键全流程启动(目标配置于 [run.<名字>];省略目标名则列出可用目标)"""
+    """One-shot full-flow boot (target configured in [run.<name>]; omit the target name to list available targets)"""
     if repeat < 1:   # int annotation guarantees the type; only the range is checked here
-        sys.exit(f'--repeat/-r 须为正整数,收到: {repeat!r}')
+        sys.exit(f'--repeat/-r must be a positive integer, got: {repeat!r}')
 
     def ensure_off():
-        print('\n[boardctl] 程序被打断,执行关机保证...', file=sys.stderr, flush=True)
+        print('\n[boardctl] interrupted, ensuring power-off...', file=sys.stderr, flush=True)
         p = power.Power(cfg)          # closure takes cfg directly, no parameter needed
         try:
             state = p.status()
@@ -90,7 +95,7 @@ def run(
         if state is False:
             return  # already off
         if not p.off(check=False):
-            print('[boardctl] 自动关机失败,请手动确认电源状态', file=sys.stderr)
+            print('[boardctl] automatic power-off failed, please check the power state manually', file=sys.stderr)
 
     # install the hook only after cfg is settled: exits during board-name
     # resolution don't trigger cleanup
@@ -110,25 +115,25 @@ def run(
 @app.command(name='power')
 def power_ctl(
     state: Annotated[Literal['on', 'off', 'status'],
-                     Parameter(help='on 开机 / off 关机 / status 查询状态')],
+                     Parameter(help='on: power on / off: power off / status: query state')],
     *,
     cfg: Annotated[BoardCfg, Parameter(parse=False)],
 ):
-    """电源控制(经电源插件:mijia/command)"""
+    """Power control (via power plugins: mijia/command)"""
     p = power.Power(cfg)
     if state == 'status':
         val = p.status()
         if val is not None:
-            print('开' if val else '关')
+            print('on' if val else 'off')
     else:
-        print(f'[{cfg.name}] 电源{"开机" if state == "on" else "关机"}({p.desc})',
+        print(f'[{cfg.name}] power {"on" if state == "on" else "off"} ({p.desc})',
               flush=True)
         (p.on if state == 'on' else p.off)()
 
 
 @app.command
 def ls():
-    """列出开发板"""
+    """List dev boards"""
     boards = available_boards()
     if not boards:
         sys.exit(_NO_BOARDS)
@@ -140,9 +145,9 @@ def ls():
 
 @app.command
 def check(
-    name: Annotated[str | None, Parameter(help='板名(省略则校验全部)')] = None,
+    name: Annotated[str | None, Parameter(help='board name (omitted: validate all)')] = None,
 ):
-    """校验板卡配置格式(schema.py 声明的形状;不碰硬件);有无效配置时退出码 1"""
+    """Validate board config format (the shape declared in schema.py; no hardware touched); exit code 1 when any config is invalid"""
     boards = available_boards()
     if not boards:
         sys.exit(_NO_BOARDS)

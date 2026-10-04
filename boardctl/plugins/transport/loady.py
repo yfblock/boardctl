@@ -1,4 +1,5 @@
-"""loady 传输插件:设备端 loady(Ymodem)+ 本机 lrzsz 发送器,走串口,零网络依赖"""
+"""loady transport plugin: loady (Ymodem) on the device + local lrzsz
+sender, over the serial, zero network dependencies"""
 import os
 import re
 import shutil
@@ -23,14 +24,16 @@ class LoadyTransport(Transport):
         return shutil.which('lrzsz-sb') or shutil.which('sb')
 
     def send(self, channel, path, addr):
-        """channel: 板的常驻捕获流(编排借出,插件不自开连接,用完不关)"""
+        """channel: the board's resident capture stream (lent by the
+        orchestrator; the plugin opens no connection of its own and doesn't
+        close it when done)"""
         sender = self._sender()
         if not sender:
-            sys.exit('找不到 Ymodem 发送器(Arch: lrzsz 包的 lrzsz-sb;Debian: lrzsz 的 sb)')
+            sys.exit('no Ymodem sender found (Arch: lrzsz-sb from the lrzsz package; Debian: sb from lrzsz)')
         s = ConsoleSession(channel, self.cfg.console.prompt)
         ok, _ = s.wait_prompt()
         if not ok:
-            sys.exit('等待 U-Boot 提示符超时,设备可能不在 U-Boot 命令行')
+            sys.exit('timed out waiting for the U-Boot prompt; the device may not be at the U-Boot command line')
         channel.write(f'loady {addr}\r')
         time.sleep(1.5)  # wait for the device to enter Ymodem receive mode
 
@@ -43,7 +46,7 @@ class LoadyTransport(Transport):
         try:
             fd = channel.blocking_fd()
             if fd is None:
-                sys.exit('该串口 URL 不支持把 fd 交给 Ymodem 发送器')
+                sys.exit('this serial URL does not support handing the fd to the Ymodem sender')
 
             p = subprocess.Popen([sender, os.path.abspath(path)],
                                  stdin=fd, stdout=fd, stderr=subprocess.PIPE)
@@ -52,7 +55,7 @@ class LoadyTransport(Transport):
             except subprocess.TimeoutExpired:
                 p.kill()
                 p.communicate()
-                print('Ymodem 发送器超时(180s),已终止')
+                print('Ymodem sender timed out (180s), terminated')
                 return False
         finally:
             channel.resume()
@@ -68,9 +71,9 @@ class LoadyTransport(Transport):
             actual = os.path.getsize(path)
             ok = size == actual
             if not ok:
-                print(f'loady 大小不符: 设备收到 {size} 字节(本地 {actual})')
+                print(f'loady size mismatch: device received {size} bytes (local {actual})')
             return ok
-        print('loady 传输失败(未见 Total Size 报告)')
+        print('loady transfer failed (no Total Size report seen)')
         return False
 
 

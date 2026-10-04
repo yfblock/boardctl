@@ -1,7 +1,9 @@
-"""console 启动模式:不传输,上电到提示符后直接执行 cmd——Linux shell 等
-提示符驱动控制台的典型形态。无地址语义:{addr}/{entry} 不可用(未配置
-即报错指名),变量取本目标键。将来若出现面向 shell 的串口传输插件
-(如 base64 粘贴),再放开 file/method。"""
+"""console boot mode: no transport, execute cmd directly once powered on to
+the prompt — the typical shape of prompt-driven consoles like a Linux
+shell. No address semantics: {addr}/{entry} are unavailable (unconfigured
+means an error naming the variable), variables come from the target's own
+keys. If a serial transport plugin aimed at shells ever appears (e.g.
+base64 paste), file/method can be opened up then."""
 import sys
 
 from . import RunMode, expand_cmd, target_vars
@@ -17,17 +19,17 @@ class ConsoleMode(RunMode):
         board, name, t = runner.board, runner.name, runner.t   # this runner's object data
         for k in ('file', 'method', 'addr', 'entry'):
             if getattr(t, k):
-                sys.exit(f'run.{name}(mode=console)不认 {k}:控制台模式只执行命令,'
-                         '无传输/地址语义(要传文件用 mode = "uboot")')
+                sys.exit(f'run.{name} (mode=console) rejects {k}: console mode only executes '
+                         'commands, no transport/address semantics (to transfer a file use mode = "uboot")')
         if not t.cmd:
-            sys.exit(f'run.{name}(mode=console)需要配置 cmd(直接在控制台执行的命令)')
+            sys.exit(f'run.{name} (mode=console) needs cmd configured (the command executed directly on the console)')
         cmdline = expand_cmd(name, t.cmd, target_vars(t))
 
         if t.reset_before:
-            print(f'[{name}] 冷启动(断电->上电->等提示符)', flush=True)
+            print(f'[{name}] cold boot (power-off -> power-on -> wait for prompt)', flush=True)
             board.cold_boot()
 
-        print(f'[{name}] 执行: {cmdline}', flush=True)
+        print(f'[{name}] executing: {cmdline}', flush=True)
         return board.stream, cmdline, None   # cold_boot already confirmed the prompt; the streaming engine marks its own watermark
 
 

@@ -2,13 +2,13 @@ name: Publish to PyPI
 
 on:
   push:
-    tags: ['v*']   # 打 tag(如 v0.1.0)自动构建发布
+    tags: ['v*']   # pushing a tag (e.g. v0.1.0) builds and publishes automatically
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write   # PyPI trusted publishing (OIDC) 必需
+      id-token: write   # required for PyPI trusted publishing (OIDC)
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
